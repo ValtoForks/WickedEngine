@@ -4,15 +4,8 @@
 #include "packHF.hlsli"
 #include "reconstructPositionHF.hlsli"
 
+#define	xSSAO texture_8
 #define	xSSR texture_9
-
-CBUFFER(DispatchParams, CBSLOT_RENDERER_DISPATCHPARAMS)
-{
-	uint3	xDispatchParams_numThreadGroups;
-	uint	xDispatchParams_value0;
-	uint3	xDispatchParams_numThreads;
-	uint	xDispatchParams_value1;
-}
 
 #ifdef DEBUG_TILEDLIGHTCULLING
 RWTEXTURE2D(DebugTexture, unorm float4, UAVSLOT_DEBUGTEXTURE);
@@ -291,7 +284,12 @@ void main(ComputeShaderInput IN)
 	{
 		ShaderEntityType entity = EntityArray[i];
 
-		switch (entity.type)
+		if (entity.GetFlags() & ENTITY_FLAG_LIGHT_STATIC)
+		{
+			continue; // static lights will be skipped here (they are used at lightmap baking)
+		}
+
+		switch (entity.GetType())
 		{
 		case ENTITY_TYPE_POINTLIGHT:
 		{
@@ -367,7 +365,7 @@ void main(ComputeShaderInput IN)
 			Sphere sphere = { entity.positionVS.xyz, entity.range };
 			if (SphereInsideFrustum(sphere, GroupFrustum, nearClipVS, maxDepthVS))
 			{
-				if (entity.type == ENTITY_TYPE_DECAL)
+				if (entity.GetType() == ENTITY_TYPE_DECAL)
 				{
 					InterlockedAdd(t_decalCount, 1);
 				}
@@ -393,7 +391,7 @@ void main(ComputeShaderInput IN)
 					if (uDepthMask & ConstructEntityMask(minDepthVS, __depthRangeRecip, sphere))
 #endif
 					{
-						if (entity.type == ENTITY_TYPE_DECAL)
+						if (entity.GetType() == ENTITY_TYPE_DECAL)
 						{
 							InterlockedAdd(o_decalCount, 1);
 						}
@@ -463,15 +461,16 @@ void main(ComputeShaderInput IN)
 	
 	float3 diffuse = 0, specular = 0;
 	float3 reflection = 0;
-	float4 baseColor = texture_gbuffer0[pixel];
+	float4 g0 = texture_gbuffer0[pixel];
+	float4 baseColor = float4(g0.rgb, 1);
+	float ao = g0.a;
 	float4 g1 = texture_gbuffer1[pixel];
-	float4 g3 = texture_gbuffer3[pixel];
+	float4 g2 = texture_gbuffer2[pixel];
 	float3 N = decode(g1.xy);
-	float roughness = g3.x;
-	float reflectance = g3.y;
-	float metalness = g3.z;
-	float ao = g3.w;
-	float3 P = getPosition((float2)pixel * g_xWorld_InternalResolution_Inverse, depth);
+	float roughness = g2.x;
+	float reflectance = g2.y;
+	float metalness = g2.z;
+	float3 P = getPosition((float2)pixel * g_xFrame_InternalResolution_Inverse, depth);
 	float3 V = normalize(g_xFrame_MainCamera_CamPos - P);
 	Surface surface = CreateSurface(P, N, V, baseColor, roughness, reflectance, metalness);
 
@@ -484,7 +483,7 @@ void main(ComputeShaderInput IN)
 	// Apply environment maps:
 
 	float4 envmapAccumulation = 0;
-	float envMapMIP = surface.roughness * g_xWorld_EnvProbeMipCount;
+	float envMapMIP = surface.roughness * g_xFrame_EnvProbeMipCount;
 
 #ifdef DISABLE_LOCALENVPMAPS
 	// local envmaps are disabled, set iterator to skip:
@@ -535,7 +534,7 @@ void main(ComputeShaderInput IN)
 
 		LightingResult result = (LightingResult)0;
 
-		switch (light.type)
+		switch (light.GetType())
 		{
 		case ENTITY_TYPE_DIRECTIONALLIGHT:
 		{
@@ -580,16 +579,20 @@ void main(ComputeShaderInput IN)
 
 	VoxelGI(surface, diffuse, reflection, ao);
 
-	float2 ScreenCoord = (float2)pixel * g_xWorld_ScreenWidthHeight_Inverse;
+	float2 ScreenCoord = (float2)pixel * g_xFrame_ScreenWidthHeight_Inverse;
 	float2 velocity = g1.zw;
 	float2 ReprojectedScreenCoord = ScreenCoord + velocity;
+	float ssao = xSSAO.SampleLevel(sampler_linear_clamp, ReprojectedScreenCoord, 0).r;
 	float4 ssr = xSSR.SampleLevel(sampler_linear_clamp, ReprojectedScreenCoord, 0);
 	reflection = lerp(reflection, ssr.rgb, ssr.a);
 
 	specular += reflection * surface.F;
 
-	deferred_Diffuse[pixel] = float4(diffuse, ao);
-	deferred_Specular[pixel] = float4(specular, 1);
+	float3 ambient = GetAmbient(N) * ao * ssao;
+	diffuse += ambient;
+
+	deferred_Diffuse[pixel] += float4(diffuse, 1);
+	deferred_Specular[pixel] += float4(specular, 1);
 
 #endif // DEFERRED
 

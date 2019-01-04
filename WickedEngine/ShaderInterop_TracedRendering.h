@@ -12,7 +12,8 @@ CBUFFER(TracedRenderingCB, CBSLOT_RENDERER_TRACED)
 {
 	float2 xTracePixelOffset;
 	float xTraceRandomSeed;
-	uint xTraceMeshTriangleCount;
+	float xTraceUserData;
+	uint4 xTraceUserData2;
 };
 
 struct TracedRenderingStoredRay

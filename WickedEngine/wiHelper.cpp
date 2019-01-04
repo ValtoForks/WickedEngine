@@ -10,6 +10,7 @@
 #include <chrono>
 #include <iomanip>
 #include <fstream>
+#include <sstream>
 
 using namespace std;
 
@@ -46,16 +47,16 @@ namespace wiHelper
 		return result;
 	}
 
-	bool readByteData(const std::string& fileName, BYTE** data, size_t& dataSize){
+	bool readByteData(const std::string& fileName, std::vector<uint8_t>& data)
+	{
 		ifstream file(fileName, ios::binary | ios::ate);
-		if (file.is_open()){
-
-			dataSize = (size_t)file.tellg();
+		if (file.is_open())
+		{
+			size_t dataSize = (size_t)file.tellg();
 			file.seekg(0, file.beg);
-			*data = new BYTE[dataSize];
-			file.read((char*)*data, dataSize);
+			data.resize(dataSize);
+			file.read((char*)data.data(), dataSize);
 			file.close();
-
 			return true;
 		}
 		stringstream ss("");
@@ -66,7 +67,7 @@ namespace wiHelper
 
 	void messageBox(const std::string& msg, const std::string& caption){
 #ifndef WINSTORE_SUPPORT
-		MessageBoxA(wiWindowRegistration::GetInstance()->GetRegisteredWindow(), msg.c_str(), caption.c_str(), 0);
+		MessageBoxA(wiWindowRegistration::GetRegisteredWindow(), msg.c_str(), caption.c_str(), 0);
 #else
 		wstring wmsg(msg.begin(), msg.end());
 		wstring wcaption(caption.begin(), caption.end());
@@ -175,9 +176,9 @@ namespace wiHelper
 		return __appDir;
 	}
 
+	static const string __originalWorkingDir = GetWorkingDirectory();
 	string GetOriginalWorkingDirectory()
 	{
-		static const string __originalWorkingDir = GetWorkingDirectory();
 		return __originalWorkingDir;
 	}
 
@@ -303,7 +304,11 @@ namespace wiHelper
 	
 	void Sleep(float milliseconds)
 	{
-		//::Sleep((DWORD)milliseconds);
+		::Sleep((DWORD)milliseconds);
+	}
+
+	void Spin(float milliseconds)
+	{
 		milliseconds /= 1000.0f;
 		chrono::high_resolution_clock::time_point t1 = chrono::high_resolution_clock::now();
 		double ms = 0;

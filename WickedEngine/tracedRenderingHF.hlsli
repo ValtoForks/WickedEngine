@@ -10,6 +10,15 @@
 static const float INFINITE_RAYHIT = 1000000;
 static const float EPSILON = 0.0001f;
 
+// returns a position that is sligtly above the surface position to avoid self intersection
+//	P	: surface postion
+//	N	: surface normal
+inline float3 trace_bias_position(in float3 P, in float3 N)
+{
+	return P + N * EPSILON; // this is the original version
+	//return P + sign(N) * abs(P * 0.0000002); // this is from https://ndotl.wordpress.com/2018/08/29/baking-artifact-free-lightmaps/ 
+}
+
 
 //struct Sphere
 //{
@@ -28,6 +37,11 @@ struct Ray
 	float3 energy;
 	uint primitiveID;
 	float2 bary;
+
+	inline void Update()
+	{
+		direction_inverse = rcp(direction);
+	}
 };
 
 inline TracedRenderingStoredRay CreateStoredRay(in Ray ray, in uint pixelID)
@@ -48,10 +62,10 @@ inline void LoadRay(in TracedRenderingStoredRay storedray, out Ray ray, out uint
 
 	ray.origin = storedray.origin;
 	ray.direction = asfloat(f16tof32(storedray.direction_energy));
-	ray.direction_inverse = rcp(ray.direction);
 	ray.energy = asfloat(f16tof32(storedray.direction_energy >> 16));
 	ray.primitiveID = storedray.primitiveID;
 	ray.bary = storedray.bary;
+	ray.Update();
 }
 
 inline Ray CreateRay(float3 origin, float3 direction)
@@ -59,10 +73,10 @@ inline Ray CreateRay(float3 origin, float3 direction)
 	Ray ray;
 	ray.origin = origin;
 	ray.direction = direction;
-	ray.direction_inverse = rcp(ray.direction);
 	ray.energy = float3(1, 1, 1);
 	ray.primitiveID = 0xFFFFFFFF;
 	ray.bary = 0;
+	ray.Update();
 	return ray;
 }
 
@@ -83,6 +97,11 @@ struct RayHit
 	float3 position;
 	uint primitiveID;
 	float2 bary;
+
+	// these will only be filled when bestHit is determined to avoid recomputing them for every intersection:
+	float3 N;
+	float2 UV;
+	uint materialIndex;
 };
 
 inline RayHit CreateRayHit()
@@ -92,9 +111,10 @@ inline RayHit CreateRayHit()
 	hit.position = float3(0.0f, 0.0f, 0.0f);
 	hit.primitiveID = 0xFFFFFFFF;
 	hit.bary = 0;
-	//hit.normal = float3(0.0f, 0.0f, 0.0f);
-	//hit.materialIndex = 0;
-	//hit.texCoords = 0;
+
+	hit.N = 0;
+	hit.UV = 0;
+	hit.materialIndex = 0;
 
 	return hit;
 }
@@ -131,14 +151,13 @@ inline RayHit CreateRayHit()
 
 
 
-#define BACKFACE_CULLING
 inline void IntersectTriangle(in Ray ray, inout RayHit bestHit, in BVHMeshTriangle tri, uint primitiveID)
 {
 	float3 v0v1 = tri.v1 - tri.v0;
 	float3 v0v2 = tri.v2 - tri.v0;
 	float3 pvec = cross(ray.direction, v0v2);
 	float det = dot(v0v1, pvec);
-#ifdef BACKFACE_CULLING 
+#ifdef RAY_BACKFACE_CULLING 
 	// if the determinant is negative the triangle is backfacing
 	// if the determinant is close to 0, the ray misses the triangle
 	if (det < EPSILON)
@@ -183,7 +202,7 @@ inline bool IntersectTriangleANY(in Ray ray, in float maxDistance, in BVHMeshTri
 	float3 v0v2 = tri.v2 - tri.v0;
 	float3 pvec = cross(ray.direction, v0v2);
 	float det = dot(v0v1, pvec);
-#ifdef BACKFACE_CULLING 
+#ifdef RAY_BACKFACE_CULLING 
 	// if the determinant is negative the triangle is backfacing
 	// if the determinant is close to 0, the ray misses the triangle
 	if (det < EPSILON)
@@ -253,15 +272,6 @@ inline bool IntersectBox(in Ray ray, in BVHAABB box)
 	return (t[8] < 0 || t[7] > t[8]) ? false : true;
 }
 
-
-
-inline float rand(inout float seed, in float2 pixel)
-{
-	float result = frac(sin(seed * dot(pixel, float2(12.9898f, 78.233f))) * 43758.5453f);
-	seed += 1.0f;
-	return result;
-}
-
 inline float3x3 GetTangentSpace(float3 normal)
 {
 	// Choose a helper vector for the cross product
@@ -273,10 +283,10 @@ inline float3x3 GetTangentSpace(float3 normal)
 	return float3x3(tangent, binormal, normal);
 }
 
-inline float3 SampleHemisphere(float3 normal, float alpha, inout float seed, in float2 pixel)
+inline float3 SampleHemisphere(float3 normal, inout float seed, in float2 pixel)
 {
 	// Sample the hemisphere, where alpha determines the kind of the sampling
-	float cosTheta = pow(rand(seed, pixel), 1.0f / (alpha + 1.0f));
+	float cosTheta = rand(seed, pixel);
 	float sinTheta = sqrt(1.0f - cosTheta * cosTheta);
 	float phi = 2 * PI * rand(seed, pixel);
 	float3 tangentSpaceDir = float3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);

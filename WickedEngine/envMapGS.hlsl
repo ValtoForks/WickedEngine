@@ -1,10 +1,5 @@
 #include "envMapHF.hlsli"
 
-CBUFFER(CubemapRenderCB, CBSLOT_RENDERER_CUBEMAPRENDER)
-{
-	float4x4 xCubeShadowVP[6];
-}
-
 [maxvertexcount(18)]
 void main(triangle VSOut_EnvmapRendering input[3], inout TriangleStream<PSIn_EnvmapRendering> CubeMapStream)
 {
@@ -19,6 +14,7 @@ void main(triangle VSOut_EnvmapRendering input[3], inout TriangleStream<PSIn_Env
 			output.pos = mul(input[v].pos, xCubeShadowVP[f]);
 			output.pos3D = input[v].pos.xyz;
 			output.tex = input[v].tex;
+			output.atl = input[v].atl;
 			output.nor = input[v].nor;
 			output.instanceColor = input[v].instanceColor;
 			output.ao = input[v].ao;

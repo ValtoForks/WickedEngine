@@ -27,7 +27,6 @@ using namespace DirectX;
 using namespace DirectX::PackedVector;
 
 #define ALIGN_16 void* operator new(size_t i){return _mm_malloc(i, 16);} void operator delete(void* p){_mm_free(p);}
-#define SAFE_INIT(a) (a) = nullptr;
 #define SAFE_RELEASE(a) if((a)!=nullptr){(a)->Release();(a)=nullptr;}
 #define SAFE_DELETE(a) if((a)!=nullptr){delete (a);(a)=nullptr;}
 #define SAFE_DELETE_ARRAY(a) if((a)!=nullptr){delete[](a);(a)=nullptr;}
@@ -48,6 +47,8 @@ inline void RECREATE(T*& myObject)
 	SAFE_DELETE(myObject);
 	myObject = new T;
 }
+
+static const XMFLOAT4X4 IDENTITYMATRIX = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
 
 
 #endif //WICKEDENGINE_COMMONINCLUDE_H

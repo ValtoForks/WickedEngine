@@ -1,4 +1,8 @@
 #include "globals.hlsli"
+#include "ShaderInterop_Font.h"
+
+TEXTURE2D(texture_font, float, TEXSLOT_FONTATLAS);
+SAMPLERSTATE(sampler_font, SSLOT_ONDEMAND1)
 
 struct VertextoPixel
 {
@@ -8,5 +12,5 @@ struct VertextoPixel
 
 float4 main(VertextoPixel PSIn) : SV_TARGET
 {
-	return texture_1.Sample(sampler_linear_clamp, PSIn.tex) * g_xColor;
+	return texture_font.Sample(sampler_font, PSIn.tex).rrrr * g_xFont_Color;
 }

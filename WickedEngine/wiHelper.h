@@ -30,7 +30,7 @@ namespace wiHelper
 
 	std::string toUpper(const std::string& s);
 
-	bool readByteData(const std::string& fileName, BYTE** data, size_t& dataSize);
+	bool readByteData(const std::string& fileName, std::vector<uint8_t>& data);
 
 	void messageBox(const std::string& msg, const std::string& caption = "Warning!");
 
@@ -58,7 +58,11 @@ namespace wiHelper
 
 	void RemoveExtensionFromFileName(std::string& filename);
 
+	// Puts the current thread to sleeping state for a given time (OS can overtake)
 	void Sleep(float milliseconds);
+
+	// Spins for the given time and does nothing (OS can not overtake)
+	void Spin(float milliseconds);
 };
 
 #endif

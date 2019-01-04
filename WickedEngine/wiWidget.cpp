@@ -6,6 +6,8 @@
 #include "wiMath.h"
 #include "wiHelper.h"
 #include "wiInputManager.h"
+#include "wiRenderer.h"
+#include "ShaderInterop_Renderer.h"
 
 #include <DirectXCollision.h>
 
@@ -13,33 +15,36 @@
 
 using namespace std;
 using namespace wiGraphicsTypes;
+using namespace wiSceneSystem;
 
 
 static wiGraphicsTypes::GraphicsPSO* PSO_colorpicker = nullptr;
 
 
-wiWidget::wiWidget():Transform()
+wiWidget::wiWidget() : TransformComponent()
 {
 	state = IDLE;
 	enabled = true;
 	visible = true;
-	colors[IDLE] = wiColor::Booger;
-	colors[FOCUS] = wiColor::Gray;
-	colors[ACTIVE] = wiColor::White;
-	colors[DEACTIVATING] = wiColor::Gray;
+	colors[IDLE] = wiColor::Booger();
+	colors[FOCUS] = wiColor::Gray();
+	colors[ACTIVE] = wiColor::White();
+	colors[DEACTIVATING] = wiColor::Gray();
 	scissorRect.bottom = 0;
 	scissorRect.left = 0;
 	scissorRect.right = 0;
 	scissorRect.top = 0;
-	container = nullptr;
+	parent = nullptr;
 	tooltipTimer = 0;
 	textColor = wiColor(255, 255, 255, 255);
 	textShadowColor = wiColor(0, 0, 0, 255);
+	translation = XMFLOAT3(0, 0, 0);
+	scale = XMFLOAT3(1, 1, 1);
 }
 wiWidget::~wiWidget()
 {
 }
-void wiWidget::Update(wiGUI* gui, float dt )
+void wiWidget::Update(wiGUI* gui, float dt)
 {
 	assert(gui != nullptr && "Ivalid GUI!");
 
@@ -52,15 +57,37 @@ void wiWidget::Update(wiGUI* gui, float dt )
 		tooltipTimer = 0;
 	}
 
-	// Only do the updatetransform if it has no parent because if it has, its transform
-	// will be updated down the chain anyway
-	if (Transform::parent == nullptr)
+	UpdateTransform();
+
+	if (parent != nullptr)
 	{
-		Transform::UpdateTransform();
+		this->UpdateTransform_Parented(*parent, world_parent_bind);
 	}
+
+	XMVECTOR S, R, T;
+	XMMatrixDecompose(&S, &R, &T, XMLoadFloat4x4(&world));
+	XMStoreFloat3(&translation, T);
+	XMStoreFloat3(&scale, S);
+}
+void wiWidget::AttachTo(TransformComponent* parent)
+{
+	this->parent = parent;
+
+	this->parent->UpdateTransform();
+	XMStoreFloat4x4(&world_parent_bind, XMMatrixInverse(nullptr, XMLoadFloat4x4(&parent->world)));
+}
+void wiWidget::Detach()
+{
+	this->parent = nullptr;
+	ApplyTransform();
 }
 void wiWidget::RenderTooltip(wiGUI* gui)
 {
+	if (!IsEnabled() || !IsVisible())
+	{
+		return;
+	}
+
 	assert(gui != nullptr && "Ivalid GUI!");
 
 	if (tooltipTimer > 25)
@@ -76,24 +103,32 @@ void wiWidget::RenderTooltip(wiGUI* gui)
 		{
 			tooltipPos.y += 40;
 		}
-		wiFontProps fontProps = wiFontProps((int)tooltipPos.x, (int)tooltipPos.y, -1, WIFALIGN_LEFT, WIFALIGN_TOP);
+		wiFontParams fontProps = wiFontParams((int)tooltipPos.x, (int)tooltipPos.y, WIFONTSIZE_DEFAULT, WIFALIGN_LEFT, WIFALIGN_TOP);
 		fontProps.color = wiColor(25, 25, 25, 255);
 		wiFont tooltipFont = wiFont(tooltip, fontProps);
 		if (!scriptTip.empty())
 		{
 			tooltipFont.SetText(tooltip + "\n" + scriptTip);
 		}
+
+		int textWidth = tooltipFont.textWidth();
+		if (tooltipPos.x > wiRenderer::GetDevice()->GetScreenWidth() - textWidth)
+		{
+			tooltipPos.x -= textWidth + 10;
+			tooltipFont.params.posX = (int)tooltipPos.x;
+		}
+
 		static const float _border = 2;
-		float fontWidth = (float)tooltipFont.textWidth() + _border* 2;
+		float fontWidth = (float)tooltipFont.textWidth() + _border * 2;
 		float fontHeight = (float)tooltipFont.textHeight() + _border * 2;
-		wiImage::Draw(wiTextureHelper::getInstance()->getColor(wiColor(255, 234, 165)), wiImageEffects(tooltipPos.x - _border, tooltipPos.y - _border, fontWidth, fontHeight), gui->GetGraphicsThread());
+		wiImage::Draw(wiTextureHelper::getColor(wiColor(255, 234, 165)), wiImageParams(tooltipPos.x - _border, tooltipPos.y - _border, fontWidth, fontHeight), gui->GetGraphicsThread());
 		tooltipFont.SetText(tooltip);
 		tooltipFont.Draw(gui->GetGraphicsThread());
 		if (!scriptTip.empty())
 		{
 			tooltipFont.SetText(scriptTip);
-			tooltipFont.props.posY += (int)(fontHeight / 2);
-			tooltipFont.props.color = wiColor(25, 25, 25, 110);
+			tooltipFont.params.posY += (int)(fontHeight / 2);
+			tooltipFont.params.color = wiColor(25, 25, 25, 110);
 			tooltipFont.Draw(gui->GetGraphicsThread());
 		}
 	}
@@ -104,21 +139,22 @@ wiHashString wiWidget::GetName()
 }
 void wiWidget::SetName(const std::string& value)
 {
-	name = value;
 	if (value.length() <= 0)
 	{
 		static unsigned long widgetID = 0;
 		stringstream ss("");
-		ss << "widget_" << widgetID;
-		name = ss.str();
-		widgetID++;
+		ss << "widget_" << widgetID++;
+		fastName = wiHashString(ss.str());
+	}
+	else
+	{
+		fastName = wiHashString(value);
 	}
 
-	fastName = wiHashString(name);
 }
 string wiWidget::GetText()
 {
-	return name;
+	return text;
 }
 void wiWidget::SetText(const std::string& value)
 {
@@ -134,34 +170,40 @@ void wiWidget::SetScriptTip(const std::string& value)
 }
 void wiWidget::SetPos(const XMFLOAT2& value)
 {
-	Transform::translation_rest.x = value.x;
-	Transform::translation_rest.y = value.y;
-	Transform::UpdateTransform();
+	SetDirty();
+	translation_local.x = value.x;
+	translation_local.y = value.y;
+	UpdateTransform();
+
+	translation = translation_local;
 }
 void wiWidget::SetSize(const XMFLOAT2& value)
 {
-	Transform::scale_rest.x = value.x;
-	Transform::scale_rest.y = value.y;
-	Transform::UpdateTransform();
+	SetDirty();
+	scale_local.x = value.x;
+	scale_local.y = value.y;
+	UpdateTransform();
+
+	scale = scale_local;
 }
 wiWidget::WIDGETSTATE wiWidget::GetState()
 {
 	return state;
 }
-void wiWidget::SetEnabled(bool val) 
-{ 
-	enabled = val; 
+void wiWidget::SetEnabled(bool val)
+{
+	enabled = val;
 }
-bool wiWidget::IsEnabled() 
-{ 
-	return enabled && visible; 
+bool wiWidget::IsEnabled()
+{
+	return enabled && visible;
 }
 void wiWidget::SetVisible(bool val)
-{ 
+{
 	visible = val;
 }
-bool wiWidget::IsVisible() 
-{ 
+bool wiWidget::IsVisible()
+{
 	return visible;
 }
 void wiWidget::Activate()
@@ -190,14 +232,14 @@ wiColor wiWidget::GetColor()
 {
 	wiColor retVal = colors[GetState()];
 	if (!IsEnabled()) {
-		retVal = wiColor::lerp(wiColor::Transparent, retVal, 0.5f);
+		retVal = wiColor::lerp(wiColor::Transparent(), retVal, 0.5f);
 	}
 	return retVal;
 }
 void wiWidget::SetScissorRect(const wiGraphicsTypes::Rect& rect)
 {
 	scissorRect = rect;
-	if(scissorRect.bottom>0)
+	if (scissorRect.bottom>0)
 		scissorRect.bottom -= 1;
 	if (scissorRect.left>0)
 		scissorRect.left += 1;
@@ -208,22 +250,19 @@ void wiWidget::SetScissorRect(const wiGraphicsTypes::Rect& rect)
 }
 void wiWidget::LoadShaders()
 {
-
-	{
-		GraphicsPSODesc desc;
-		desc.vs = wiRenderer::vertexShaders[VSTYPE_LINE];
-		desc.ps = wiRenderer::pixelShaders[PSTYPE_LINE];
-		desc.il = wiRenderer::vertexLayouts[VLTYPE_LINE];
-		desc.dss = wiRenderer::depthStencils[DSSTYPE_XRAY];
-		desc.bs = wiRenderer::blendStates[BSTYPE_OPAQUE];
-		desc.rs = wiRenderer::rasterizers[RSTYPE_DOUBLESIDED];
-		desc.numRTs = 1;
-		desc.RTFormats[0] = wiRenderer::GetDevice()->GetBackBufferFormat();
-		desc.pt = TRIANGLESTRIP;
-		RECREATE(PSO_colorpicker);
-		HRESULT hr = wiRenderer::GetDevice()->CreateGraphicsPSO(&desc, PSO_colorpicker);
-		assert(SUCCEEDED(hr));
-	}
+	GraphicsPSODesc desc;
+	desc.vs = wiRenderer::GetVertexShader(VSTYPE_LINE);
+	desc.ps = wiRenderer::GetPixelShader(PSTYPE_LINE);
+	desc.il = wiRenderer::GetVertexLayout(VLTYPE_LINE);
+	desc.dss = wiRenderer::GetDepthStencilState(DSSTYPE_XRAY);
+	desc.bs = wiRenderer::GetBlendState(BSTYPE_OPAQUE);
+	desc.rs = wiRenderer::GetRasterizerState(RSTYPE_DOUBLESIDED);
+	desc.numRTs = 1;
+	desc.RTFormats[0] = wiRenderer::GetDevice()->GetBackBufferFormat();
+	desc.pt = TRIANGLESTRIP;
+	RECREATE(PSO_colorpicker);
+	HRESULT hr = wiRenderer::GetDevice()->CreateGraphicsPSO(&desc, PSO_colorpicker);
+	assert(SUCCEEDED(hr));
 }
 
 
@@ -241,7 +280,7 @@ wiButton::~wiButton()
 {
 
 }
-void wiButton::Update(wiGUI* gui, float dt )
+void wiButton::Update(wiGUI* gui, float dt)
 {
 	wiWidget::Update(gui, dt);
 
@@ -255,10 +294,10 @@ void wiButton::Update(wiGUI* gui, float dt )
 		return;
 	}
 
-	hitBox.pos.x = Transform::translation.x;
-	hitBox.pos.y = Transform::translation.y;
-	hitBox.siz.x = Transform::scale.x;
-	hitBox.siz.y = Transform::scale.y;
+	hitBox.pos.x = translation.x;
+	hitBox.pos.y = translation.y;
+	hitBox.siz.x = scale.x;
+	hitBox.siz.y = scale.y;
 
 	Hitbox2D pointerHitbox = Hitbox2D(gui->GetPointerPos(), XMFLOAT2(1, 1));
 
@@ -295,7 +334,7 @@ void wiButton::Update(wiGUI* gui, float dt )
 		}
 	}
 
-	if (wiInputManager::GetInstance()->press(VK_LBUTTON, wiInputManager::KEYBOARD))
+	if (wiInputManager::press(VK_LBUTTON, wiInputManager::KEYBOARD))
 	{
 		if (state == FOCUS)
 		{
@@ -304,7 +343,7 @@ void wiButton::Update(wiGUI* gui, float dt )
 		}
 	}
 
-	if (wiInputManager::GetInstance()->down(VK_LBUTTON, wiInputManager::KEYBOARD))
+	if (wiInputManager::down(VK_LBUTTON, wiInputManager::KEYBOARD))
 	{
 		if (state == DEACTIVATING)
 		{
@@ -349,8 +388,8 @@ void wiButton::Render(wiGUI* gui)
 
 	gui->ResetScissor();
 
-	wiImage::Draw(wiTextureHelper::getInstance()->getColor(color)
-		, wiImageEffects(translation.x, translation.y, scale.x, scale.y), gui->GetGraphicsThread());
+	wiImage::Draw(wiTextureHelper::getColor(color)
+		, wiImageParams(translation.x, translation.y, scale.x, scale.y), gui->GetGraphicsThread());
 
 
 
@@ -359,7 +398,7 @@ void wiButton::Render(wiGUI* gui)
 	scissorRect.right = (LONG)(translation.x + scale.x);
 	scissorRect.top = (LONG)(translation.y);
 	wiRenderer::GetDevice()->BindScissorRects(1, &scissorRect, gui->GetGraphicsThread());
-	wiFont(text, wiFontProps((int)(translation.x + scale.x*0.5f), (int)(translation.y + scale.y*0.5f), -1, WIFALIGN_CENTER, WIFALIGN_CENTER, 2, 1, 
+	wiFont(text, wiFontParams((int)(translation.x + scale.x*0.5f), (int)(translation.y + scale.y*0.5f), WIFONTSIZE_DEFAULT, WIFALIGN_CENTER, WIFALIGN_CENTER, 0, 0,
 		textColor, textShadowColor)).Draw(gui->GetGraphicsThread());
 
 }
@@ -393,7 +432,7 @@ wiLabel::~wiLabel()
 {
 
 }
-void wiLabel::Update(wiGUI* gui, float dt )
+void wiLabel::Update(wiGUI* gui, float dt)
 {
 	wiWidget::Update(gui, dt);
 
@@ -420,8 +459,8 @@ void wiLabel::Render(wiGUI* gui)
 
 	gui->ResetScissor();
 
-	wiImage::Draw(wiTextureHelper::getInstance()->getColor(color)
-		, wiImageEffects(translation.x, translation.y, scale.x, scale.y), gui->GetGraphicsThread());
+	wiImage::Draw(wiTextureHelper::getColor(color)
+		, wiImageParams(translation.x, translation.y, scale.x, scale.y), gui->GetGraphicsThread());
 
 
 	scissorRect.bottom = (LONG)(translation.y + scale.y);
@@ -429,7 +468,7 @@ void wiLabel::Render(wiGUI* gui)
 	scissorRect.right = (LONG)(translation.x + scale.x);
 	scissorRect.top = (LONG)(translation.y);
 	wiRenderer::GetDevice()->BindScissorRects(1, &scissorRect, gui->GetGraphicsThread());
-	wiFont(text, wiFontProps((int)translation.x + 2, (int)translation.y + 2, -1, WIFALIGN_LEFT, WIFALIGN_TOP, 2, 1, 
+	wiFont(text, wiFontParams((int)translation.x + 2, (int)translation.y + 2, WIFONTSIZE_DEFAULT, WIFALIGN_LEFT, WIFALIGN_TOP, 0, 0,
 		textColor, textShadowColor)).Draw(gui->GetGraphicsThread());
 
 }
@@ -483,10 +522,10 @@ void wiTextInputField::Update(wiGUI* gui, float dt)
 		return;
 	}
 
-	hitBox.pos.x = Transform::translation.x;
-	hitBox.pos.y = Transform::translation.y;
-	hitBox.siz.x = Transform::scale.x;
-	hitBox.siz.y = Transform::scale.y;
+	hitBox.pos.x = translation.x;
+	hitBox.pos.y = translation.y;
+	hitBox.siz.x = scale.x;
+	hitBox.siz.y = scale.y;
 
 	Hitbox2D pointerHitbox = Hitbox2D(gui->GetPointerPos(), XMFLOAT2(1, 1));
 	bool intersectsPointer = pointerHitbox.intersects(hitBox);
@@ -510,7 +549,7 @@ void wiTextInputField::Update(wiGUI* gui, float dt)
 		}
 	}
 
-	if (wiInputManager::GetInstance()->press(VK_LBUTTON, wiInputManager::KEYBOARD))
+	if (wiInputManager::press(VK_LBUTTON, wiInputManager::KEYBOARD))
 	{
 		if (state == FOCUS)
 		{
@@ -519,7 +558,7 @@ void wiTextInputField::Update(wiGUI* gui, float dt)
 		}
 	}
 
-	if (wiInputManager::GetInstance()->down(VK_LBUTTON, wiInputManager::KEYBOARD))
+	if (wiInputManager::down(VK_LBUTTON, wiInputManager::KEYBOARD))
 	{
 		if (state == DEACTIVATING)
 		{
@@ -537,7 +576,7 @@ void wiTextInputField::Update(wiGUI* gui, float dt)
 
 	if (state == ACTIVE)
 	{
-		if (wiInputManager::GetInstance()->press(VK_RETURN, wiInputManager::KEYBOARD))
+		if (wiInputManager::press(VK_RETURN, wiInputManager::KEYBOARD))
 		{
 			// accept input...
 
@@ -552,8 +591,8 @@ void wiTextInputField::Update(wiGUI* gui, float dt)
 
 			gui->DeactivateWidget(this);
 		}
-		else if ((wiInputManager::GetInstance()->press(VK_LBUTTON, wiInputManager::KEYBOARD) && !intersectsPointer) ||
-			wiInputManager::GetInstance()->press(VK_ESCAPE, wiInputManager::KEYBOARD))
+		else if ((wiInputManager::press(VK_LBUTTON, wiInputManager::KEYBOARD) && !intersectsPointer) ||
+			wiInputManager::press(VK_ESCAPE, wiInputManager::KEYBOARD))
 		{
 			// cancel input 
 			value_new.clear();
@@ -576,8 +615,8 @@ void wiTextInputField::Render(wiGUI* gui)
 
 	gui->ResetScissor();
 
-	wiImage::Draw(wiTextureHelper::getInstance()->getColor(color)
-		, wiImageEffects(translation.x, translation.y, scale.x, scale.y), gui->GetGraphicsThread());
+	wiImage::Draw(wiTextureHelper::getColor(color)
+		, wiImageParams(translation.x, translation.y, scale.x, scale.y), gui->GetGraphicsThread());
 
 
 
@@ -596,7 +635,7 @@ void wiTextInputField::Render(wiGUI* gui)
 	{
 		activeText = value;
 	}
-	wiFont(activeText, wiFontProps((int)(translation.x + 2), (int)(translation.y + scale.y*0.5f), -1, WIFALIGN_LEFT, WIFALIGN_CENTER, 2, 1,
+	wiFont(activeText, wiFontParams((int)(translation.x + 2), (int)(translation.y + scale.y*0.5f), WIFONTSIZE_DEFAULT, WIFALIGN_LEFT, WIFALIGN_CENTER, 0, 0,
 		textColor, textShadowColor)).Draw(gui->GetGraphicsThread());
 
 }
@@ -621,7 +660,7 @@ void wiTextInputField::DeleteFromInput()
 
 
 wiSlider::wiSlider(float start, float end, float defaultValue, float step, const std::string& name) :wiWidget()
-	,start(start), end(end), value(defaultValue), step(max(step, 1))
+, start(start), end(end), value(defaultValue), step(max(step, 1))
 {
 	SetName(name);
 	SetText(fastName.GetString());
@@ -638,7 +677,8 @@ wiSlider::wiSlider(float start, float end, float defaultValue, float step, const
 		this->end = max(this->end, args.fValue);
 		onSlide(args);
 	});
-	valueInputField->attachTo(this);
+	valueInputField->parent = this;
+	valueInputField->AttachTo(this);
 }
 wiSlider::~wiSlider()
 {
@@ -652,7 +692,13 @@ float wiSlider::GetValue()
 {
 	return value;
 }
-void wiSlider::Update(wiGUI* gui, float dt )
+void wiSlider::SetRange(float start, float end)
+{
+	this->start = start;
+	this->end = end;
+	this->value = wiMath::Clamp(this->value, start, end);
+}
+void wiSlider::Update(wiGUI* gui, float dt)
 {
 	wiWidget::Update(gui, dt);
 
@@ -687,7 +733,7 @@ void wiSlider::Update(wiGUI* gui, float dt )
 	}
 	if (state == ACTIVE)
 	{
-		if (wiInputManager::GetInstance()->down(VK_LBUTTON, wiInputManager::KEYBOARD))
+		if (wiInputManager::down(VK_LBUTTON, wiInputManager::KEYBOARD))
 		{
 			if (state == ACTIVE)
 			{
@@ -703,10 +749,10 @@ void wiSlider::Update(wiGUI* gui, float dt )
 
 	float headWidth = scale.x*0.05f;
 
-	hitBox.pos.x = Transform::translation.x - headWidth*0.5f;
-	hitBox.pos.y = Transform::translation.y;
-	hitBox.siz.x = Transform::scale.x + headWidth;
-	hitBox.siz.y = Transform::scale.y;
+	hitBox.pos.x = translation.x - headWidth * 0.5f;
+	hitBox.pos.y = translation.y;
+	hitBox.siz.x = scale.x + headWidth;
+	hitBox.siz.y = scale.y;
 
 	Hitbox2D pointerHitbox = Hitbox2D(gui->GetPointerPos(), XMFLOAT2(1, 1));
 
@@ -720,7 +766,7 @@ void wiSlider::Update(wiGUI* gui, float dt )
 		}
 	}
 
-	if (wiInputManager::GetInstance()->press(VK_LBUTTON, wiInputManager::KEYBOARD))
+	if (wiInputManager::press(VK_LBUTTON, wiInputManager::KEYBOARD))
 	{
 		if (state == FOCUS)
 		{
@@ -764,25 +810,25 @@ void wiSlider::Render(wiGUI* gui)
 	gui->ResetScissor();
 
 	// trail
-	wiImage::Draw(wiTextureHelper::getInstance()->getColor(color)
-		, wiImageEffects(translation.x - headWidth*0.5f, translation.y + scale.y * 0.5f - scale.y*0.1f, scale.x + headWidth, scale.y * 0.2f), gui->GetGraphicsThread());
+	wiImage::Draw(wiTextureHelper::getColor(color)
+		, wiImageParams(translation.x - headWidth * 0.5f, translation.y + scale.y * 0.5f - scale.y*0.1f, scale.x + headWidth, scale.y * 0.2f), gui->GetGraphicsThread());
 	// head
 	float headPosX = wiMath::Lerp(translation.x, translation.x + scale.x, wiMath::Clamp(wiMath::InverseLerp(start, end, value), 0, 1));
-	wiImage::Draw(wiTextureHelper::getInstance()->getColor(color)
-		, wiImageEffects(headPosX - headWidth * 0.5f, translation.y, headWidth, scale.y), gui->GetGraphicsThread());
+	wiImage::Draw(wiTextureHelper::getColor(color)
+		, wiImageParams(headPosX - headWidth * 0.5f, translation.y, headWidth, scale.y), gui->GetGraphicsThread());
 
-	if (parent != nullptr)
+	if (parent != gui)
 	{
 		wiRenderer::GetDevice()->BindScissorRects(1, &scissorRect, gui->GetGraphicsThread());
 	}
 	// text
-	wiFont(text, wiFontProps((int)(translation.x - headWidth * 0.5f), (int)(translation.y + scale.y*0.5f), -1, WIFALIGN_RIGHT, WIFALIGN_CENTER, 2, 1,
-		textColor, textShadowColor )).Draw(gui->GetGraphicsThread());
+	wiFont(text, wiFontParams((int)(translation.x - headWidth * 0.5f), (int)(translation.y + scale.y*0.5f), WIFONTSIZE_DEFAULT, WIFALIGN_RIGHT, WIFALIGN_CENTER, 0, 0,
+		textColor, textShadowColor)).Draw(gui->GetGraphicsThread());
 
 	//// value
 	//stringstream ss("");
 	//ss << value;
-	//wiFont(ss.str(), wiFontProps((int)(translation.x + scale.x + headWidth), (int)(translation.y + scale.y*0.5f), -1, WIFALIGN_LEFT, WIFALIGN_CENTER, 2, 1,
+	//wiFont(ss.str(), wiFontParams((int)(translation.x + scale.x + headWidth), (int)(translation.y + scale.y*0.5f), -1, WIFALIGN_LEFT, WIFALIGN_CENTER, 0, 0,
 	//	textColor, textShadowColor )).Draw(gui->GetGraphicsThread(), parent != nullptr);
 
 
@@ -799,18 +845,18 @@ void wiSlider::OnSlide(function<void(wiEventArgs args)> func)
 
 
 wiCheckBox::wiCheckBox(const std::string& name) :wiWidget()
-	,checked(false)
+, checked(false)
 {
 	SetName(name);
 	SetText(fastName.GetString());
 	OnClick([](wiEventArgs args) {});
-	SetSize(XMFLOAT2(20,20));
+	SetSize(XMFLOAT2(20, 20));
 }
 wiCheckBox::~wiCheckBox()
 {
 
 }
-void wiCheckBox::Update(wiGUI* gui, float dt )
+void wiCheckBox::Update(wiGUI* gui, float dt)
 {
 	wiWidget::Update(gui, dt);
 
@@ -837,10 +883,10 @@ void wiCheckBox::Update(wiGUI* gui, float dt )
 		gui->DeactivateWidget(this);
 	}
 
-	hitBox.pos.x = Transform::translation.x;
-	hitBox.pos.y = Transform::translation.y;
-	hitBox.siz.x = Transform::scale.x;
-	hitBox.siz.y = Transform::scale.y;
+	hitBox.pos.x = translation.x;
+	hitBox.pos.y = translation.y;
+	hitBox.siz.x = scale.x;
+	hitBox.siz.y = scale.y;
 
 	Hitbox2D pointerHitbox = Hitbox2D(gui->GetPointerPos(), XMFLOAT2(1, 1));
 
@@ -854,7 +900,7 @@ void wiCheckBox::Update(wiGUI* gui, float dt )
 		}
 	}
 
-	if (wiInputManager::GetInstance()->press(VK_LBUTTON, wiInputManager::KEYBOARD))
+	if (wiInputManager::press(VK_LBUTTON, wiInputManager::KEYBOARD))
 	{
 		if (state == FOCUS)
 		{
@@ -863,7 +909,7 @@ void wiCheckBox::Update(wiGUI* gui, float dt )
 		}
 	}
 
-	if (wiInputManager::GetInstance()->down(VK_LBUTTON, wiInputManager::KEYBOARD))
+	if (wiInputManager::down(VK_LBUTTON, wiInputManager::KEYBOARD))
 	{
 		if (state == DEACTIVATING)
 		{
@@ -897,23 +943,23 @@ void wiCheckBox::Render(wiGUI* gui)
 	gui->ResetScissor();
 
 	// control
-	wiImage::Draw(wiTextureHelper::getInstance()->getColor(color)
-		, wiImageEffects(translation.x, translation.y, scale.x, scale.y), gui->GetGraphicsThread());
+	wiImage::Draw(wiTextureHelper::getColor(color)
+		, wiImageParams(translation.x, translation.y, scale.x, scale.y), gui->GetGraphicsThread());
 
 	// check
 	if (GetCheck())
 	{
-		wiImage::Draw(wiTextureHelper::getInstance()->getColor(wiColor::lerp(color, wiColor::White, 0.8f))
-			, wiImageEffects(translation.x + scale.x*0.25f, translation.y + scale.y*0.25f, scale.x*0.5f, scale.y*0.5f)
+		wiImage::Draw(wiTextureHelper::getColor(wiColor::lerp(color, wiColor::White(), 0.8f))
+			, wiImageParams(translation.x + scale.x*0.25f, translation.y + scale.y*0.25f, scale.x*0.5f, scale.y*0.5f)
 			, gui->GetGraphicsThread());
 	}
 
-	if (parent != nullptr)
+	if (parent != gui)
 	{
 		wiRenderer::GetDevice()->BindScissorRects(1, &scissorRect, gui->GetGraphicsThread());
 	}
-	wiFont(text, wiFontProps((int)(translation.x), (int)(translation.y + scale.y*0.5f), -1, WIFALIGN_RIGHT, WIFALIGN_CENTER, 2, 1,
-		textColor, textShadowColor )).Draw(gui->GetGraphicsThread());
+	wiFont(text, wiFontParams((int)(translation.x), (int)(translation.y + scale.y*0.5f), WIFONTSIZE_DEFAULT, WIFALIGN_RIGHT, WIFALIGN_CENTER, 0, 0,
+		textColor, textShadowColor)).Draw(gui->GetGraphicsThread());
 
 }
 void wiCheckBox::OnClick(function<void(wiEventArgs args)> func)
@@ -952,7 +998,7 @@ const float wiComboBox::_GetItemOffset(int index) const
 	index = max(firstItemVisible, index) - firstItemVisible;
 	return scale.y * (index + 1) + 1;
 }
-void wiComboBox::Update(wiGUI* gui, float dt )
+void wiComboBox::Update(wiGUI* gui, float dt)
 {
 	wiWidget::Update(gui, dt);
 
@@ -979,10 +1025,10 @@ void wiComboBox::Update(wiGUI* gui, float dt )
 		gui->DeactivateWidget(this);
 	}
 
-	hitBox.pos.x = Transform::translation.x;
-	hitBox.pos.y = Transform::translation.y;
-	hitBox.siz.x = Transform::scale.x + scale.y + 1; // + drop-down indicator arrow + little offset
-	hitBox.siz.y = Transform::scale.y;
+	hitBox.pos.x = translation.x;
+	hitBox.pos.y = translation.y;
+	hitBox.siz.x = scale.x + scale.y + 1; // + drop-down indicator arrow + little offset
+	hitBox.siz.y = scale.y;
 
 	Hitbox2D pointerHitbox = Hitbox2D(gui->GetPointerPos(), XMFLOAT2(1, 1));
 
@@ -996,13 +1042,13 @@ void wiComboBox::Update(wiGUI* gui, float dt )
 		}
 	}
 
-	if (wiInputManager::GetInstance()->press(VK_LBUTTON, wiInputManager::KEYBOARD))
+	if (wiInputManager::press(VK_LBUTTON, wiInputManager::KEYBOARD))
 	{
 		// activate
 		clicked = true;
 	}
 
-	if (wiInputManager::GetInstance()->down(VK_LBUTTON, wiInputManager::KEYBOARD))
+	if (wiInputManager::down(VK_LBUTTON, wiInputManager::KEYBOARD))
 	{
 		if (state == DEACTIVATING)
 		{
@@ -1031,7 +1077,7 @@ void wiComboBox::Update(wiGUI* gui, float dt )
 		}
 		else
 		{
-			int scroll = (int)wiInputManager::GetInstance()->getpointer().z;
+			int scroll = (int)wiInputManager::getpointer().z;
 			firstItemVisible -= scroll;
 			firstItemVisible = max(0, min((int)items.size() - maxVisibleItemCount, firstItemVisible));
 
@@ -1044,10 +1090,10 @@ void wiComboBox::Update(wiGUI* gui, float dt )
 				}
 
 				Hitbox2D itembox;
-				itembox.pos.x = Transform::translation.x;
-				itembox.pos.y = Transform::translation.y + _GetItemOffset((int)i);
-				itembox.siz.x = Transform::scale.x;
-				itembox.siz.y = Transform::scale.y;
+				itembox.pos.x = translation.x;
+				itembox.pos.y = translation.y + _GetItemOffset((int)i);
+				itembox.siz.x = scale.x;
+				itembox.siz.y = scale.y;
 				if (pointerHitbox.intersects(itembox))
 				{
 					hovered = (int)i;
@@ -1087,25 +1133,25 @@ void wiComboBox::Render(wiGUI* gui)
 	gui->ResetScissor();
 
 	// control-base
-	wiImage::Draw(wiTextureHelper::getInstance()->getColor(color)
-		, wiImageEffects(translation.x, translation.y, scale.x, scale.y), gui->GetGraphicsThread());
+	wiImage::Draw(wiTextureHelper::getColor(color)
+		, wiImageParams(translation.x, translation.y, scale.x, scale.y), gui->GetGraphicsThread());
 	// control-arrow
-	wiImage::Draw(wiTextureHelper::getInstance()->getColor(color)
-		, wiImageEffects(translation.x+scale.x+1, translation.y, scale.y, scale.y), gui->GetGraphicsThread());
-	wiFont("V", wiFontProps((int)(translation.x+scale.x+scale.y*0.5f), (int)(translation.y + scale.y*0.5f), -1, WIFALIGN_CENTER, WIFALIGN_CENTER, 2, 1,
+	wiImage::Draw(wiTextureHelper::getColor(color)
+		, wiImageParams(translation.x + scale.x + 1, translation.y, scale.y, scale.y), gui->GetGraphicsThread());
+	wiFont("V", wiFontParams((int)(translation.x + scale.x + scale.y*0.5f), (int)(translation.y + scale.y*0.5f), WIFONTSIZE_DEFAULT, WIFALIGN_CENTER, WIFALIGN_CENTER, 0, 0,
 		textColor, textShadowColor)).Draw(gui->GetGraphicsThread());
 
 
-	if (parent != nullptr)
+	if (parent != gui)
 	{
 		wiRenderer::GetDevice()->BindScissorRects(1, &scissorRect, gui->GetGraphicsThread());
 	}
-	wiFont(text, wiFontProps((int)(translation.x), (int)(translation.y + scale.y*0.5f), -1, WIFALIGN_RIGHT, WIFALIGN_CENTER, 2, 1,
+	wiFont(text, wiFontParams((int)(translation.x), (int)(translation.y + scale.y*0.5f), WIFONTSIZE_DEFAULT, WIFALIGN_RIGHT, WIFALIGN_CENTER, 0, 0,
 		textColor, textShadowColor)).Draw(gui->GetGraphicsThread());
 
 	if (selected >= 0)
 	{
-		wiFont(items[selected], wiFontProps((int)(translation.x + scale.x*0.5f), (int)(translation.y + scale.y*0.5f), -1, WIFALIGN_CENTER, WIFALIGN_CENTER, 2, 1,
+		wiFont(items[selected], wiFontParams((int)(translation.x + scale.x*0.5f), (int)(translation.y + scale.y*0.5f), WIFONTSIZE_DEFAULT, WIFALIGN_CENTER, WIFALIGN_CENTER, 0, 0,
 			textColor, textShadowColor)).Draw(gui->GetGraphicsThread());
 	}
 
@@ -1136,9 +1182,9 @@ void wiComboBox::Render(wiGUI* gui)
 					col = colors[ACTIVE];
 				}
 			}
-			wiImage::Draw(wiTextureHelper::getInstance()->getColor(col)
-				, wiImageEffects(translation.x, translation.y + _GetItemOffset(i), scale.x, scale.y), gui->GetGraphicsThread());
-			wiFont(x, wiFontProps((int)(translation.x + scale.x*0.5f), (int)(translation.y + scale.y*0.5f +_GetItemOffset(i)), -1, WIFALIGN_CENTER, WIFALIGN_CENTER, 2, 1,
+			wiImage::Draw(wiTextureHelper::getColor(col)
+				, wiImageParams(translation.x, translation.y + _GetItemOffset(i), scale.x, scale.y), gui->GetGraphicsThread());
+			wiFont(x, wiFontParams((int)(translation.x + scale.x*0.5f), (int)(translation.y + scale.y*0.5f + _GetItemOffset(i)), WIFONTSIZE_DEFAULT, WIFALIGN_CENTER, WIFALIGN_CENTER, 0, 0,
 				textColor, textShadowColor)).Draw(gui->GetGraphicsThread());
 			i++;
 		}
@@ -1228,20 +1274,18 @@ wiWindow::wiWindow(wiGUI* gui, const std::string& name) :wiWidget()
 
 	// Add controls
 
-	SAFE_INIT(closeButton);
-	SAFE_INIT(moveDragger);
-	SAFE_INIT(resizeDragger_BottomRight);
-	SAFE_INIT(resizeDragger_UpperLeft);
-
-
-
 	// Add a grabber onto the title bar
 	moveDragger = new wiButton(name + "_move_dragger");
 	moveDragger->SetText("");
 	moveDragger->SetSize(XMFLOAT2(scale.x - windowcontrolSize * 3, windowcontrolSize));
 	moveDragger->SetPos(XMFLOAT2(windowcontrolSize, 0));
-	moveDragger->OnDrag([this](wiEventArgs args) {
+	moveDragger->OnDrag([this, gui](wiEventArgs args) {
 		this->Translate(XMFLOAT3(args.deltaPos.x, args.deltaPos.y, 0));
+		this->wiWidget::Update(gui, 0);
+		for (auto& x : this->childrenWidgets)
+		{
+			x->wiWidget::Update(gui, 0);
+		}
 	});
 	AddWidget(moveDragger);
 
@@ -1260,7 +1304,7 @@ wiWindow::wiWindow(wiGUI* gui, const std::string& name) :wiWidget()
 	minimizeButton = new wiButton(name + "_minimize_button");
 	minimizeButton->SetText("-");
 	minimizeButton->SetSize(XMFLOAT2(windowcontrolSize, windowcontrolSize));
-	minimizeButton->SetPos(XMFLOAT2(translation.x + scale.x - windowcontrolSize *2, translation.y));
+	minimizeButton->SetPos(XMFLOAT2(translation.x + scale.x - windowcontrolSize * 2, translation.y));
 	minimizeButton->OnClick([this](wiEventArgs args) {
 		this->SetMinimized(!this->IsMinimized());
 	});
@@ -1272,12 +1316,17 @@ wiWindow::wiWindow(wiGUI* gui, const std::string& name) :wiWidget()
 	resizeDragger_UpperLeft->SetText("");
 	resizeDragger_UpperLeft->SetSize(XMFLOAT2(windowcontrolSize, windowcontrolSize));
 	resizeDragger_UpperLeft->SetPos(XMFLOAT2(0, 0));
-	resizeDragger_UpperLeft->OnDrag([this](wiEventArgs args) {
+	resizeDragger_UpperLeft->OnDrag([this, gui](wiEventArgs args) {
 		XMFLOAT2 scaleDiff;
 		scaleDiff.x = (scale.x - args.deltaPos.x) / scale.x;
 		scaleDiff.y = (scale.y - args.deltaPos.y) / scale.y;
 		this->Translate(XMFLOAT3(args.deltaPos.x, args.deltaPos.y, 0));
 		this->Scale(XMFLOAT3(scaleDiff.x, scaleDiff.y, 1));
+		this->wiWidget::Update(gui, 0);
+		for (auto& x : this->childrenWidgets)
+		{
+			x->wiWidget::Update(gui, 0);
+		}
 	});
 	AddWidget(resizeDragger_UpperLeft);
 
@@ -1286,11 +1335,16 @@ wiWindow::wiWindow(wiGUI* gui, const std::string& name) :wiWidget()
 	resizeDragger_BottomRight->SetText("");
 	resizeDragger_BottomRight->SetSize(XMFLOAT2(windowcontrolSize, windowcontrolSize));
 	resizeDragger_BottomRight->SetPos(XMFLOAT2(translation.x + scale.x - windowcontrolSize, translation.y + scale.y - windowcontrolSize));
-	resizeDragger_BottomRight->OnDrag([this](wiEventArgs args) {
+	resizeDragger_BottomRight->OnDrag([this, gui](wiEventArgs args) {
 		XMFLOAT2 scaleDiff;
 		scaleDiff.x = (scale.x + args.deltaPos.x) / scale.x;
 		scaleDiff.y = (scale.y + args.deltaPos.y) / scale.y;
 		this->Scale(XMFLOAT3(scaleDiff.x, scaleDiff.y, 1));
+		this->wiWidget::Update(gui, 0);
+		for (auto& x : this->childrenWidgets)
+		{
+			x->wiWidget::Update(gui, 0);
+		}
 	});
 	AddWidget(resizeDragger_BottomRight);
 
@@ -1310,8 +1364,7 @@ void wiWindow::AddWidget(wiWidget* widget)
 	widget->SetEnabled(this->IsEnabled());
 	widget->SetVisible(this->IsVisible());
 	gui->AddWidget(widget);
-	widget->attachTo(this);
-	widget->container = this;
+	widget->AttachTo(this);
 
 	childrenWidgets.push_back(widget);
 }
@@ -1320,7 +1373,7 @@ void wiWindow::RemoveWidget(wiWidget* widget)
 	assert(gui != nullptr && "Ivalid GUI!");
 
 	gui->RemoveWidget(widget);
-	widget->detach();
+	//widget->detach();
 
 	childrenWidgets.remove(widget);
 }
@@ -1330,7 +1383,7 @@ void wiWindow::RemoveWidgets(bool alsoDelete)
 
 	for (auto& x : childrenWidgets)
 	{
-		x->detach();
+		//x->detach();
 		gui->RemoveWidget(x);
 		if (alsoDelete)
 		{
@@ -1340,7 +1393,7 @@ void wiWindow::RemoveWidgets(bool alsoDelete)
 
 	childrenWidgets.clear();
 }
-void wiWindow::Update(wiGUI* gui, float dt )
+void wiWindow::Update(wiGUI* gui, float dt)
 {
 	wiWidget::Update(gui, dt);
 
@@ -1370,16 +1423,15 @@ void wiWindow::Update(wiGUI* gui, float dt )
 	//	minimizeButton->scale.y = windowcontrolSize;
 	//}
 
-
-	if (!IsEnabled())
-	{
-		return;
-	}
-
 	for (auto& x : childrenWidgets)
 	{
 		x->Update(gui, dt);
 		x->SetScissorRect(scissorRect);
+	}
+
+	if (!IsEnabled())
+	{
+		return;
 	}
 
 	if (gui->IsWidgetDisabled(this))
@@ -1403,8 +1455,8 @@ void wiWindow::Render(wiGUI* gui)
 	// body
 	if (!IsMinimized())
 	{
-		wiImage::Draw(wiTextureHelper::getInstance()->getColor(color)
-			, wiImageEffects(translation.x, translation.y, scale.x, scale.y), gui->GetGraphicsThread());
+		wiImage::Draw(wiTextureHelper::getColor(color)
+			, wiImageParams(translation.x, translation.y, scale.x, scale.y), gui->GetGraphicsThread());
 	}
 
 	for (auto& x : childrenWidgets)
@@ -1421,7 +1473,7 @@ void wiWindow::Render(wiGUI* gui)
 	scissorRect.right = (LONG)(translation.x + scale.x);
 	scissorRect.top = (LONG)(translation.y);
 	wiRenderer::GetDevice()->BindScissorRects(1, &scissorRect, gui->GetGraphicsThread());
-	wiFont(text, wiFontProps((int)(translation.x + resizeDragger_UpperLeft->scale.x + 2), (int)(translation.y), -1, WIFALIGN_LEFT, WIFALIGN_TOP, 2, 1,
+	wiFont(text, wiFontParams((int)(translation.x + resizeDragger_UpperLeft->scale.x + 2), (int)(translation.y), WIFONTSIZE_DEFAULT, WIFALIGN_LEFT, WIFALIGN_TOP, 0, 0,
 		textColor, textShadowColor)).Draw(gui->GetGraphicsThread());
 
 }
@@ -1482,7 +1534,7 @@ bool wiWindow::IsMinimized()
 wiColorPicker::wiColorPicker(wiGUI* gui, const std::string& name) :wiWindow(gui, name)
 {
 	SetSize(XMFLOAT2(300, 260));
-	SetColor(wiColor::Ghost);
+	SetColor(wiColor::Ghost());
 	RemoveWidget(resizeDragger_BottomRight);
 	RemoveWidget(resizeDragger_UpperLeft);
 
@@ -1500,7 +1552,7 @@ static const float __colorpicker_center = 120;
 static const float __colorpicker_radius_triangle = 75;
 static const float __colorpicker_radius = 80;
 static const float __colorpicker_width = 16;
-void wiColorPicker::Update(wiGUI* gui, float dt )
+void wiColorPicker::Update(wiGUI* gui, float dt)
 {
 	wiWindow::Update(gui, dt);
 
@@ -1538,7 +1590,7 @@ void wiColorPicker::Update(wiGUI* gui, float dt )
 	XMVECTOR D = XMVectorSet(0, 0, 1, 0);
 	bool hover_saturation = TriangleTests::Intersects(O, D, _A, _B, _C, distTri);
 
-	if (hover_hue && state==IDLE)
+	if (hover_hue && state == IDLE)
 	{
 		state = FOCUS;
 		huefocus = true;
@@ -1555,7 +1607,7 @@ void wiColorPicker::Update(wiGUI* gui, float dt )
 
 	bool dragged = false;
 
-	if (wiInputManager::GetInstance()->press(VK_LBUTTON, wiInputManager::KEYBOARD))
+	if (wiInputManager::press(VK_LBUTTON, wiInputManager::KEYBOARD))
 	{
 		if (state == FOCUS)
 		{
@@ -1564,7 +1616,7 @@ void wiColorPicker::Update(wiGUI* gui, float dt )
 		}
 	}
 
-	if (wiInputManager::GetInstance()->down(VK_LBUTTON, wiInputManager::KEYBOARD))
+	if (wiInputManager::down(VK_LBUTTON, wiInputManager::KEYBOARD))
 	{
 		if (state == ACTIVE)
 		{
@@ -1588,14 +1640,14 @@ void wiColorPicker::Update(wiGUI* gui, float dt )
 		wiMath::GetBarycentric(O, _A, _B, _C, saturation_picker_barycentric.x, saturation_picker_barycentric.y, saturation_picker_barycentric.z, true);
 		gui->ActivateWidget(this);
 	}
-	else if(state != IDLE)
+	else if (state != IDLE)
 	{
 		gui->DeactivateWidget(this);
 	}
 
-	float r = __colorpicker_radius + __colorpicker_width*0.5f;
-	hue_picker = XMFLOAT2(center.x + r*cos(angle), center.y + r*-sin(angle));
-	XMStoreFloat2(&saturation_picker, _A*saturation_picker_barycentric.x + _B*saturation_picker_barycentric.y + _C*saturation_picker_barycentric.z);
+	float r = __colorpicker_radius + __colorpicker_width * 0.5f;
+	hue_picker = XMFLOAT2(center.x + r * cos(angle), center.y + r * -sin(angle));
+	XMStoreFloat2(&saturation_picker, _A*saturation_picker_barycentric.x + _B * saturation_picker_barycentric.y + _C * saturation_picker_barycentric.z);
 	XMStoreFloat4(&final_color, XMLoadFloat4(&hue_color)*saturation_picker_barycentric.x + XMVectorSet(1, 1, 1, 1)*saturation_picker_barycentric.y + XMVectorSet(0, 0, 0, 1)*saturation_picker_barycentric.z);
 
 	if (dragged)
@@ -1603,7 +1655,7 @@ void wiColorPicker::Update(wiGUI* gui, float dt )
 		wiEventArgs args;
 		args.clickPos = pointer;
 		args.fValue = angle;
-		args.color = final_color;
+		args.color = wiColor::fromFloat4(final_color);
 		onColorChanged(args);
 	}
 }
@@ -1734,10 +1786,10 @@ void wiColorPicker::Render(wiGUI* gui)
 
 	XMMATRIX __cam = wiRenderer::GetDevice()->GetScreenProjection();
 
-	wiRenderer::GetDevice()->BindConstantBuffer(VS, wiRenderer::constantBuffers[CBTYPE_MISC], CBSLOT_RENDERER_MISC, threadID);
+	wiRenderer::GetDevice()->BindConstantBuffer(VS, wiRenderer::GetConstantBuffer(CBTYPE_MISC), CBSLOT_RENDERER_MISC, threadID);
 	wiRenderer::GetDevice()->BindGraphicsPSO(PSO_colorpicker, threadID);
 
-	wiRenderer::MiscCB cb;
+	MiscCB cb;
 
 	// render saturation triangle
 	{
@@ -1747,13 +1799,13 @@ void wiColorPicker::Render(wiGUI* gui)
 			wiRenderer::GetDevice()->UpdateBuffer(&vb_saturation, vertices_saturation.data(), threadID, vb_saturation.GetDesc().ByteWidth);
 		}
 
-		cb.mTransform = XMMatrixTranspose(
+		XMStoreFloat4x4(&cb.g_xTransform, XMMatrixTranspose(
 			XMMatrixRotationZ(-angle) *
 			XMMatrixTranslation(translation.x + __colorpicker_center, translation.y + __colorpicker_center, 0) *
 			__cam
-		);
-		cb.mColor = XMFLOAT4(1, 1, 1, 1);
-		wiRenderer::GetDevice()->UpdateBuffer(wiRenderer::constantBuffers[CBTYPE_MISC], &cb, threadID);
+		));
+		cb.g_xColor = XMFLOAT4(1, 1, 1, 1);
+		wiRenderer::GetDevice()->UpdateBuffer(wiRenderer::GetConstantBuffer(CBTYPE_MISC), &cb, threadID);
 		GPUBuffer* vbs[] = {
 			&vb_saturation,
 		};
@@ -1766,12 +1818,12 @@ void wiColorPicker::Render(wiGUI* gui)
 
 	// render hue circle
 	{
-		cb.mTransform = XMMatrixTranspose(
+		XMStoreFloat4x4(&cb.g_xTransform, XMMatrixTranspose(
 			XMMatrixTranslation(translation.x + __colorpicker_center, translation.y + __colorpicker_center, 0) *
 			__cam
-		);
-		cb.mColor = XMFLOAT4(1, 1, 1, 1);
-		wiRenderer::GetDevice()->UpdateBuffer(wiRenderer::constantBuffers[CBTYPE_MISC], &cb, threadID);
+		));
+		cb.g_xColor = float4(1, 1, 1, 1);
+		wiRenderer::GetDevice()->UpdateBuffer(wiRenderer::GetConstantBuffer(CBTYPE_MISC), &cb, threadID);
 		GPUBuffer* vbs[] = {
 			&vb_hue,
 		};
@@ -1784,12 +1836,12 @@ void wiColorPicker::Render(wiGUI* gui)
 
 	// render hue picker
 	{
-		cb.mTransform = XMMatrixTranspose(
+		XMStoreFloat4x4(&cb.g_xTransform, XMMatrixTranspose(
 			XMMatrixTranslation(hue_picker.x, hue_picker.y, 0) *
 			__cam
-		);
-		cb.mColor = XMFLOAT4(1 - hue_color.x, 1 - hue_color.y, 1 - hue_color.z, 1);
-		wiRenderer::GetDevice()->UpdateBuffer(wiRenderer::constantBuffers[CBTYPE_MISC], &cb, threadID);
+		));
+		cb.g_xColor = float4(1 - hue_color.x, 1 - hue_color.y, 1 - hue_color.z, 1);
+		wiRenderer::GetDevice()->UpdateBuffer(wiRenderer::GetConstantBuffer(CBTYPE_MISC), &cb, threadID);
 		GPUBuffer* vbs[] = {
 			&vb_picker,
 		};
@@ -1802,12 +1854,12 @@ void wiColorPicker::Render(wiGUI* gui)
 
 	// render saturation picker
 	{
-		cb.mTransform = XMMatrixTranspose(
+		XMStoreFloat4x4(&cb.g_xTransform, XMMatrixTranspose(
 			XMMatrixTranslation(saturation_picker.x, saturation_picker.y, 0) *
 			__cam
-		);
-		cb.mColor = XMFLOAT4(1 - final_color.x, 1 - final_color.y, 1 - final_color.z, 1);
-		wiRenderer::GetDevice()->UpdateBuffer(wiRenderer::constantBuffers[CBTYPE_MISC], &cb, threadID);
+		));
+		cb.g_xColor = float4(1 - final_color.x, 1 - final_color.y, 1 - final_color.z, 1);
+		wiRenderer::GetDevice()->UpdateBuffer(wiRenderer::GetConstantBuffer(CBTYPE_MISC), &cb, threadID);
 		GPUBuffer* vbs[] = {
 			&vb_picker,
 		};
@@ -1820,12 +1872,12 @@ void wiColorPicker::Render(wiGUI* gui)
 
 	// render preview
 	{
-		cb.mTransform = XMMatrixTranspose(
+		XMStoreFloat4x4(&cb.g_xTransform, XMMatrixTranspose(
 			XMMatrixTranslation(translation.x + 260, translation.y + 40, 0) *
 			__cam
-		);
-		cb.mColor = GetPickColor();
-		wiRenderer::GetDevice()->UpdateBuffer(wiRenderer::constantBuffers[CBTYPE_MISC], &cb, threadID);
+		));
+		cb.g_xColor = GetPickColor();
+		wiRenderer::GetDevice()->UpdateBuffer(wiRenderer::GetConstantBuffer(CBTYPE_MISC), &cb, threadID);
 		GPUBuffer* vbs[] = {
 			&vb_preview,
 		};
@@ -1841,9 +1893,9 @@ void wiColorPicker::Render(wiGUI* gui)
 	_rgb << "R: " << (int)(final_color.x * 255) << endl;
 	_rgb << "G: " << (int)(final_color.y * 255) << endl;
 	_rgb << "B: " << (int)(final_color.z * 255) << endl;
-	wiFont(_rgb.str(), wiFontProps((int)(translation.x + 200), (int)(translation.y + 200), -1, WIFALIGN_LEFT, WIFALIGN_TOP, 2, 1,
+	wiFont(_rgb.str(), wiFontParams((int)(translation.x + 200), (int)(translation.y + 200), WIFONTSIZE_DEFAULT, WIFALIGN_LEFT, WIFALIGN_TOP, 0, 0,
 		textColor, textShadowColor)).Draw(threadID);
-	
+
 }
 XMFLOAT4 wiColorPicker::GetPickColor()
 {

@@ -27,13 +27,9 @@ HullInputType main(Input_Object_ALL input)
 	surface.normal = normalize(mul(surface.normal, (float3x3)WORLD));
 
 
-	affectWind(surface.position.xyz, surface.wind, g_xFrame_Time);
-	affectWind(surface.prevPos.xyz, surface.wind, g_xFrame_TimePrev);
-
-
 	Out.pos = surface.position.xyz;
 	Out.posPrev = surface.prevPos.xyz;
-	Out.tex = surface.uv.xyxy;
+	Out.tex = float4(surface.uv, surface.atlas);
 	Out.nor = float4(surface.normal, 1);
 
 	Out.instanceColor = input.instance.color_dither.rgb;

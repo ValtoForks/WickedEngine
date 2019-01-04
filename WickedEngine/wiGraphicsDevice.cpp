@@ -2,7 +2,7 @@
 
 using namespace wiGraphicsTypes;
 
-bool GraphicsDevice::CheckCapability(GRAPHICSDEVICE_CAPABILITY capability)
+bool GraphicsDevice::CheckCapability(GRAPHICSDEVICE_CAPABILITY capability) const
 {
 	switch (capability)
 	{
@@ -27,18 +27,21 @@ bool GraphicsDevice::CheckCapability(GRAPHICSDEVICE_CAPABILITY capability)
 	return false;
 }
 
-uint32_t GraphicsDevice::GetFormatStride(FORMAT value)
+uint32_t GraphicsDevice::GetFormatStride(FORMAT value) const
 {
 	switch (value)
 	{
 	case FORMAT_R32G32B32A32_FLOAT:
 		return 16;
-		break;
 	case FORMAT_R32G32_FLOAT:
+	case FORMAT_R32G32_UINT:
+	case FORMAT_R32G32_SINT:
+	case FORMAT_R16G16B16A16_FLOAT:
 		return 8;
-		break;
 	case FORMAT_R11G11B10_FLOAT:
 	case FORMAT_R16G16_FLOAT:
+	case FORMAT_R16G16_UINT:
+	case FORMAT_R16G16_SINT:
 	case FORMAT_R32_FLOAT:
 	case FORMAT_R32_UINT:
 	case FORMAT_R8G8B8A8_UINT:
@@ -47,14 +50,43 @@ uint32_t GraphicsDevice::GetFormatStride(FORMAT value)
 	case FORMAT_R8G8B8A8_SNORM:
 	case FORMAT_R10G10B10A2_UNORM:
 		return 4;
-		break;
 	case FORMAT_R16_FLOAT:
+	case FORMAT_R16_UINT:
+	case FORMAT_R16_SINT:
+	case FORMAT_R16_UNORM:
+	case FORMAT_R16_SNORM:
 		return 2;
+	case FORMAT_R8_TYPELESS:
+	case FORMAT_R8_UNORM:
+	case FORMAT_R8_SNORM:
+	case FORMAT_R8_UINT:
+	case FORMAT_R8_SINT:
+	case FORMAT_A8_UNORM:
+		return 1;
+	default:
+		assert(0);
 		break;
 	}
 
-	// TODO more formats
+	// Probably didn't catch all...
 
 	return 16;
+}
+
+bool GraphicsDevice::IsFormatUnorm(FORMAT value) const
+{
+	switch (value)
+	{
+	case FORMAT_R8G8B8A8_UNORM:
+	case FORMAT_R10G10B10A2_UNORM:
+	case FORMAT_R16_UNORM:
+	case FORMAT_R8_UNORM:
+	case FORMAT_A8_UNORM:
+		return true;
+	}
+
+	// Probably didn't catch all...
+
+	return false;
 }
 

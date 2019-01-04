@@ -9,7 +9,7 @@ using namespace std;
 using namespace wiGraphicsTypes;
 
 
-PostprocessWindow::PostprocessWindow(wiGUI* gui, Renderable3DComponent* comp) : GUI(gui), component(comp)
+PostprocessWindow::PostprocessWindow(wiGUI* gui, RenderPath3D* comp) : GUI(gui), component(comp)
 {
 	assert(component && "PostprocessWnd invalid component!");
 	assert(GUI && "Invalid GUI!");
@@ -18,15 +18,26 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, Renderable3DComponent* comp) : 
 	float screenH = (float)wiRenderer::GetDevice()->GetScreenHeight();
 
 	ppWindow = new wiWindow(GUI, "PostProcess Window");
-	ppWindow->SetSize(XMFLOAT2(360, 520));
+	ppWindow->SetSize(XMFLOAT2(360, 550));
 	GUI->AddWidget(ppWindow);
 
 	float x = 110;
 	float y = 0;
 
+	exposureSlider = new wiSlider(0.0f, 3.0f, 1, 10000, "Exposure: ");
+	exposureSlider->SetTooltip("Set the tonemap exposure value");
+	exposureSlider->SetScriptTip("RenderPath3D::SetExposure(float value)");
+	exposureSlider->SetSize(XMFLOAT2(100, 20));
+	exposureSlider->SetPos(XMFLOAT2(x, y += 35));
+	exposureSlider->SetValue(component->getExposure());
+	exposureSlider->OnSlide([&](wiEventArgs args) {
+		component->setExposure(args.fValue);
+	});
+	ppWindow->AddWidget(exposureSlider);
+
 	lensFlareCheckBox = new wiCheckBox("LensFlare: ");
 	lensFlareCheckBox->SetTooltip("Toggle visibility of light source flares. Additional setup needed per light for a lensflare to be visible.");
-	lensFlareCheckBox->SetScriptTip("Renderable3DComponent::SetLensFlareEnabled(bool value)");
+	lensFlareCheckBox->SetScriptTip("RenderPath3D::SetLensFlareEnabled(bool value)");
 	lensFlareCheckBox->SetPos(XMFLOAT2(x, y += 35));
 	lensFlareCheckBox->SetCheck(component->getLensFlareEnabled());
 	lensFlareCheckBox->OnClick([&](wiEventArgs args) {
@@ -36,7 +47,7 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, Renderable3DComponent* comp) : 
 
 	lightShaftsCheckBox = new wiCheckBox("LightShafts: ");
 	lightShaftsCheckBox->SetTooltip("Enable light shaft for directional light sources.");
-	lightShaftsCheckBox->SetScriptTip("Renderable3DComponent::SetLightShaftsEnabled(bool value)");
+	lightShaftsCheckBox->SetScriptTip("RenderPath3D::SetLightShaftsEnabled(bool value)");
 	lightShaftsCheckBox->SetPos(XMFLOAT2(x, y += 35));
 	lightShaftsCheckBox->SetCheck(component->getLightShaftsEnabled());
 	lightShaftsCheckBox->OnClick([&](wiEventArgs args) {
@@ -46,7 +57,7 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, Renderable3DComponent* comp) : 
 
 	ssaoCheckBox = new wiCheckBox("SSAO: ");
 	ssaoCheckBox->SetTooltip("Enable Screen Space Ambient Occlusion.");
-	ssaoCheckBox->SetScriptTip("Renderable3DComponent::SetSSAOEnabled(bool value)");
+	ssaoCheckBox->SetScriptTip("RenderPath3D::SetSSAOEnabled(bool value)");
 	ssaoCheckBox->SetPos(XMFLOAT2(x, y += 35));
 	ssaoCheckBox->SetCheck(component->getSSAOEnabled());
 	ssaoCheckBox->OnClick([&](wiEventArgs args) {
@@ -56,7 +67,7 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, Renderable3DComponent* comp) : 
 
 	ssrCheckBox = new wiCheckBox("SSR: ");
 	ssrCheckBox->SetTooltip("Enable Screen Space Reflections.");
-	ssrCheckBox->SetScriptTip("Renderable3DComponent::SetSSREnabled(bool value)");
+	ssrCheckBox->SetScriptTip("RenderPath3D::SetSSREnabled(bool value)");
 	ssrCheckBox->SetPos(XMFLOAT2(x, y += 35));
 	ssrCheckBox->SetCheck(component->getSSREnabled());
 	ssrCheckBox->OnClick([&](wiEventArgs args) {
@@ -66,7 +77,7 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, Renderable3DComponent* comp) : 
 
 	sssCheckBox = new wiCheckBox("SSS: ");
 	sssCheckBox->SetTooltip("Enable Subsurface Scattering. (Deferred only for now)");
-	sssCheckBox->SetScriptTip("Renderable3DComponent::SetSSSEnabled(bool value)");
+	sssCheckBox->SetScriptTip("RenderPath3D::SetSSSEnabled(bool value)");
 	sssCheckBox->SetPos(XMFLOAT2(x, y += 35));
 	sssCheckBox->SetCheck(component->getSSSEnabled());
 	sssCheckBox->OnClick([&](wiEventArgs args) {
@@ -85,7 +96,7 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, Renderable3DComponent* comp) : 
 
 	motionBlurCheckBox = new wiCheckBox("MotionBlur: ");
 	motionBlurCheckBox->SetTooltip("Enable motion blur for camera movement and animated meshes.");
-	motionBlurCheckBox->SetScriptTip("Renderable3DComponent::SetMotionBlurEnabled(bool value)");
+	motionBlurCheckBox->SetScriptTip("RenderPath3D::SetMotionBlurEnabled(bool value)");
 	motionBlurCheckBox->SetPos(XMFLOAT2(x, y += 35));
 	motionBlurCheckBox->SetCheck(component->getMotionBlurEnabled());
 	motionBlurCheckBox->OnClick([&](wiEventArgs args) {
@@ -95,7 +106,7 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, Renderable3DComponent* comp) : 
 
 	depthOfFieldCheckBox = new wiCheckBox("DepthOfField: ");
 	depthOfFieldCheckBox->SetTooltip("Enable Depth of field effect. Additional focus and strength setup required.");
-	depthOfFieldCheckBox->SetScriptTip("Renderable3DComponent::SetDepthOfFieldEnabled(bool value)");
+	depthOfFieldCheckBox->SetScriptTip("RenderPath3D::SetDepthOfFieldEnabled(bool value)");
 	depthOfFieldCheckBox->SetPos(XMFLOAT2(x, y += 35));
 	depthOfFieldCheckBox->SetCheck(component->getDepthOfFieldEnabled());
 	depthOfFieldCheckBox->OnClick([&](wiEventArgs args) {
@@ -105,7 +116,7 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, Renderable3DComponent* comp) : 
 
 	depthOfFieldFocusSlider = new wiSlider(0.01f, 600, 100, 10000, "Focus: ");
 	depthOfFieldFocusSlider->SetTooltip("Set the focus distance from the camera. The picture will be sharper near the focus, and blurrier further from it.");
-	depthOfFieldFocusSlider->SetScriptTip("Renderable3DComponent::SetDepthOfFieldFocus(float value)");
+	depthOfFieldFocusSlider->SetScriptTip("RenderPath3D::SetDepthOfFieldFocus(float value)");
 	depthOfFieldFocusSlider->SetSize(XMFLOAT2(100, 20));
 	depthOfFieldFocusSlider->SetPos(XMFLOAT2(x + 100, y));
 	depthOfFieldFocusSlider->SetValue(component->getDepthOfFieldFocus());
@@ -116,7 +127,7 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, Renderable3DComponent* comp) : 
 
 	depthOfFieldStrengthSlider = new wiSlider(0.01f, 4, 100, 1000, "Strength: ");
 	depthOfFieldStrengthSlider->SetTooltip("Set depth of field blur strength.");
-	depthOfFieldStrengthSlider->SetScriptTip("Renderable3DComponent::SetDepthOfFieldStrength(float value)");
+	depthOfFieldStrengthSlider->SetScriptTip("RenderPath3D::SetDepthOfFieldStrength(float value)");
 	depthOfFieldStrengthSlider->SetSize(XMFLOAT2(100, 20));
 	depthOfFieldStrengthSlider->SetPos(XMFLOAT2(x + 100, y += 35));
 	depthOfFieldStrengthSlider->SetValue(component->getDepthOfFieldStrength());
@@ -127,7 +138,7 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, Renderable3DComponent* comp) : 
 
 	bloomCheckBox = new wiCheckBox("Bloom: ");
 	bloomCheckBox->SetTooltip("Enable bloom. The effect adds color bleeding to the brightest parts of the scene.");
-	bloomCheckBox->SetScriptTip("Renderable3DComponent::SetBloomEnabled(bool value)");
+	bloomCheckBox->SetScriptTip("RenderPath3D::SetBloomEnabled(bool value)");
 	bloomCheckBox->SetPos(XMFLOAT2(x, y += 35));
 	bloomCheckBox->SetCheck(component->getBloomEnabled());
 	bloomCheckBox->OnClick([&](wiEventArgs args) {
@@ -135,9 +146,19 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, Renderable3DComponent* comp) : 
 	});
 	ppWindow->AddWidget(bloomCheckBox);
 
+	bloomStrengthSlider = new wiSlider(0.0f, 10, 1, 1000, "Threshold: ");
+	bloomStrengthSlider->SetTooltip("Set bloom threshold. The values below this will not glow on the screen.");
+	bloomStrengthSlider->SetSize(XMFLOAT2(100, 20));
+	bloomStrengthSlider->SetPos(XMFLOAT2(x + 100, y));
+	bloomStrengthSlider->SetValue(component->getBloomThreshold());
+	bloomStrengthSlider->OnSlide([&](wiEventArgs args) {
+		component->setBloomThreshold(args.fValue);
+	});
+	ppWindow->AddWidget(bloomStrengthSlider);
+
 	fxaaCheckBox = new wiCheckBox("FXAA: ");
 	fxaaCheckBox->SetTooltip("Fast Approximate Anti Aliasing. A fast antialiasing method, but can be a bit too blurry.");
-	fxaaCheckBox->SetScriptTip("Renderable3DComponent::SetFXAAEnabled(bool value)");
+	fxaaCheckBox->SetScriptTip("RenderPath3D::SetFXAAEnabled(bool value)");
 	fxaaCheckBox->SetPos(XMFLOAT2(x, y += 35));
 	fxaaCheckBox->SetCheck(component->getFXAAEnabled());
 	fxaaCheckBox->OnClick([&](wiEventArgs args) {
@@ -147,7 +168,7 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, Renderable3DComponent* comp) : 
 
 	colorGradingCheckBox = new wiCheckBox("Color Grading: ");
 	colorGradingCheckBox->SetTooltip("Enable color grading of the final render. An additional lookup texture must be set for it to take effect.");
-	colorGradingCheckBox->SetScriptTip("Renderable3DComponent::SetColorGradingEnabled(bool value)");
+	colorGradingCheckBox->SetScriptTip("RenderPath3D::SetColorGradingEnabled(bool value)");
 	colorGradingCheckBox->SetPos(XMFLOAT2(x, y += 35));
 	colorGradingCheckBox->SetCheck(component->getColorGradingEnabled());
 	colorGradingCheckBox->OnClick([&](wiEventArgs args) {
@@ -185,8 +206,8 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, Renderable3DComponent* comp) : 
 				ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
 				if (GetOpenFileNameA(&ofn) == TRUE) {
 					string fileName = ofn.lpstrFile;
-					//wiRenderer::SetColorGrading((Texture2D*)wiResourceManager::GetGlobal()->add(fileName));
-					component->setColorGradingTexture((Texture2D*)wiResourceManager::GetGlobal()->add(fileName));
+					//wiRenderer::SetColorGrading((Texture2D*)wiResourceManager::GetGlobal().add(fileName));
+					component->setColorGradingTexture((Texture2D*)wiResourceManager::GetGlobal().add(fileName));
 					if (component->getColorGradingTexture() != nullptr)
 					{
 						colorGradingButton->SetText(fileName);
@@ -206,7 +227,7 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, Renderable3DComponent* comp) : 
 
 	stereogramCheckBox = new wiCheckBox("Stereogram: ");
 	stereogramCheckBox->SetTooltip("Compute a stereogram from the depth buffer. It produces a 3D silhouette image when viewed cross eyed.");
-	stereogramCheckBox->SetScriptTip("Renderable3DComponent::SetStereogramEnabled(bool value)");
+	stereogramCheckBox->SetScriptTip("RenderPath3D::SetStereogramEnabled(bool value)");
 	stereogramCheckBox->SetPos(XMFLOAT2(x, y += 35));
 	stereogramCheckBox->SetCheck(component->getStereogramEnabled());
 	stereogramCheckBox->OnClick([&](wiEventArgs args) {
@@ -216,7 +237,7 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, Renderable3DComponent* comp) : 
 
 	sharpenFilterCheckBox = new wiCheckBox("Sharpen Filter: ");
 	sharpenFilterCheckBox->SetTooltip("Toggle sharpening post process of the final image.");
-	sharpenFilterCheckBox->SetScriptTip("Renderable3DComponent::SetSharpenFilterEnabled(bool value)");
+	sharpenFilterCheckBox->SetScriptTip("RenderPath3D::SetSharpenFilterEnabled(bool value)");
 	sharpenFilterCheckBox->SetPos(XMFLOAT2(x, y += 35));
 	sharpenFilterCheckBox->SetCheck(component->getSharpenFilterEnabled());
 	sharpenFilterCheckBox->OnClick([&](wiEventArgs args) {
@@ -226,7 +247,7 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, Renderable3DComponent* comp) : 
 
 	sharpenFilterAmountSlider = new wiSlider(0, 4, 1, 1000, "Amount: ");
 	sharpenFilterAmountSlider->SetTooltip("Set sharpness filter strength.");
-	sharpenFilterAmountSlider->SetScriptTip("Renderable3DComponent::SetSharpenFilterAmount(float value)");
+	sharpenFilterAmountSlider->SetScriptTip("RenderPath3D::SetSharpenFilterAmount(float value)");
 	sharpenFilterAmountSlider->SetSize(XMFLOAT2(100, 20));
 	sharpenFilterAmountSlider->SetPos(XMFLOAT2(x + 100, y));
 	sharpenFilterAmountSlider->SetValue(component->getSharpenFilterAmount());

@@ -1,180 +1,135 @@
 # WickedEngine Documentation (work in progress)
 
-## Graphics
+## High Level Interface
+The high level interface consists of classes that allow for extending the engine with custom functionality. This is usually done by overriding the classes.
 
-![InformationSheet](information_sheet.png)
-
-## Classes
-The most important classes are related as described in the following diagram: 
-![ClassDiagram](classdiagram.png)
-<br><i>(Diagram generated with nomnoml.com)</i>
+- MainComponent
+	- This is the main runtime component that has the Run() function. It should be included in the application entry point while calling Run() in an infinite loop
+	- It has a SetWindow function that expects a platform specific window handle. It is necessary to call SetWindow() before calling Run()
+	- Once Run() is called in a loop, it will perform Initialize(), Update(), FixedUpdate(), Render(), Compose() functions. 
+	- ActivatePath() will activate a render path and optionally fade the screen to transition between them. Refer to RenderPath for additional details.
+	- Refer to the order of execution diagram below for an overview:
 
 Order of execution:
 ![OrderOfExecution](orderofexecution.png)
 <br><i>(Diagram generated with draw.io)</i>
 
-### Components
-The "engine components" which provide the high level runtime flow control logic. The application usually overrides these to specify desired specialized logic and rendering.
+- RenderPath
+	- This is an empty base class that can be activated with a MainComponent. It calls its Start(), Update(), FixedUpdate(), Render(), Compose(), Stop() functions as needed. Override this to perform custom gameplay or rendering logic.
+	- It has several ready to use variants, such as RenderPath2D, RenderPath3D_Deferred, LoadingScreen, etc.
 
-#### MainComponent
-This class represents the engine entry point and the highest level of runtime flow control. At any time it holds a RenderableComponent of a certain type while continuously calling its Update and Render functions.
-This class is completely overridable to the user's desired control flow logic.
+- RenderPath2D
+	- Capable of handling 2D rendering to offscreen buffer in Render() function, or just the screen in Compose() function.
+	- It has some functionality to render wiSprite and wiFont onto rendering layers
 
-#### RenderableComponent
-This is an abstract class which is void of any logic, but its overriders can implement several methods of it like Load, Update, Render, etc. 
-Any class implementing this interface can be "activated" on the MainComponent and that will just run it.
-The available functions for overriding are the following:
+- RenderPath3D
+	- By itself, it only does everything that RenderPath2D can do.
+	- It must be specialized for a specific 3D rendering algorithm, such as RenderPath3D_Deferred, Forward, TiledForward, etc.
 
-	- void Initialize() : Initialize common state
-	- void Load() : Use it for resource loading
-	- void Unload() : Destroy resources inside of this
-	- void Start() : This function will be called when this component is activated by the MainComponent
-	- void Stop() : When activating a RenderableComponent in the MainComponent, that component will Start(), but the previously activated component will call Stop()
-	- void FixedUpdate() : Implement you fixed timestep logic in this function
-	- void Update(float dt) : Used to implements variable timestep logic. dt paraeter is elapsed time in seconds
-	- void Render() : Implement rendering to an off screen buffer
-	- void Compose() : Implement rendering to the final buffer which will be presented to the screen
+- RenderPath3D_Forward
+	- Implements simple Forward rendering. It uses few render targets, but not very efficient with many lights
 
-#### Renderable2DComponent
-It can manage the rendering of a 2D overlay. It supports layers for sprites and font rendering. The whole class is overridable.
+- RenderPath3D_Defered
+	- Implements old school Deferred rendering. It uses many render target, capable of advanced post processing effects, and good to render many lights.
 
-#### Renderable3DComponent
-It manages the rendering of a 3D scene with a 2D overlay because it inherits everything from Renderable2DComponent too. This is an interface because multiple rendering methods are provided for performance intesive 3D rendering.
-It is important to note that Renderable3DComponents only specify rendering flow and render buffers (render targets). The management of the scene graphs is not their responsibility. That is the wiRenderer static class.
-The application can use any of the deriving renderers like ForwardRenderableComponent,  DeferredRenderableComponent or TiledForwardRenderableComponent for example, or even create a custom renderable component (advanced).
+- RenderPath3D_TiledForward
+	- Implements an advanced method of Forward rendering to be able to render many lights efficiently. It uses few render targets, so memory efficient.
 
-##### ForwardRenderableComponent
-The simplest kind of 3D renderable component. It supports only directional light for the time being. It is also the least flexible and scalable one.
+- RenderPath3D_TiledDeferred
+	- Implements and advanced method of Deferred rendering to be able to render many lights with reduced memory bandwidth requirements.
 
-##### TiledForwardRenderableComponent
-This implements the Forward+ rendering pipeline which is a forward rendering using per-screenspace-tile light list while rendering objects. It has a Z-buffer creation prepass to eficiently cull lights per tile and reduce overdraw.
+- RenderPath3D_PathTracing
+	- Implements a compute shader based path tracing solution. In a static scene, the rendering will converge to ground truth.
 
-##### DeferredRenderableComponent
-This implements a Deferred rendering pipeline. Several screen space geometry buffers are created while rendering the objects, then the lights are rendered in screen space while looking up the geometry information.
-It has a lower entry barrier performance wise than Tiled Forward rendering but has some disadvantages. It scales worse for increasing number of lights, has lower precision output and transparent objects are rendered using the 
-Forward rendering pipeline.
+## System
+You can find out more about the Entity-Component system and other engine-level systems under ENGINE/System filter in the solution.
 
-##### TiledDeferredRenderableComponent
-The tiled deferred render path is using a G-buffer like traditional deferred rendering but all the lights are accumulated in a single compute shader pass. Transparent objects are rendered like in Forward+ mode.
+- wiECS
+	- This is the core entity-component relationship handler class: ComponentManager
+	- Entity is a number, it can reference any number of different components through ComponentManager containers
+	- Component is not defined, it can be any data, that is stored inside a ComponentManager along entities
 
-#### LoadingScreenComponent
-A helper engine component to load resources or an entire component. It can be activated by the MainComponent as a regular component but has some additional features which are not available in any other.
+- wiSceneSystem
+	- This contains Scene, a class that is responsible of holding and managing everything in the world
+	- There are also all of the Component types, like TransformComponent, MeshComponent, etc.
 
-	- void addLoadingFunction(function<void()> loadingFunction) : Assign a function to do on a separate loading thread. Multiple functions can be assigned
-	- void addLoadingComponent(RenderableComponent* component, MainComponent* main) : A helper for loading a whole component. When it's finished, the MainComponent which is provided in the arguments, will activate that component
-	- void onFinshed(function<void()> finishFunction) : Tell the component what to do when loading is completely finished
-	- int getPercentageComplete() : Retrieve a number between 0 and 100 indicating the finished amount of work the component has done
-	- bool isActive() : See if the component is currently working on the loading or not
+- wiJobSystem
+	- Manages the execution of concurrent tasks
+	- Execute() function will schedule a task for execution on a separate thread
+	- Dispatch() function will schedule a task for execution on multiple parallel threads
+	- Wait() function will block until all jobs have finished. All scheduling operations are put on hold too
 
+- wiInitializer
+	- Initializes all engine systems
 
+- wiWindowRegistration
+	- This is a platform specific utility to manage the native display window
 
-### Graphics Classes
-This section contains engine graphics rendering functionality documentation.
+## Physics
+You can find the physics system related functionality under ENGINE/Physics filter in the solution.
+It uses the entity-component system to perform updating all physics components in the world.
 
-#### API
-The graphics API can be managed with these wrappers. These are provided to avoid API specific code in the engine.
+- wiPhysicsEngine_Bullet
+	- Bullet physics engine library implementation of the physics update system
 
-##### GraphicsDevice
-Functions to expose API functionality. There are two main kinds of functions. Resource creation functions are thread safe, rendering command functions are not, they have a GRAPHICSTHREAD parameter which is important to be provided when they are called from separate threads.
-The interface maps best to Direct3D 11's functionality.
+## Graphics
+You can find the Graphics related classes un der ENGINE/Graphics filter in the solution. The most notable classes are the folowing:
 
-##### wiGraphicsDescriptors
-Graphics resource descriptors. These are used when creating graphics resources.
+- wiRenderer
+	- This is a collection of functions that facilitate an engine-level rendering logic, like DrawScene, DrawLights, etc...
 
-##### wiGraphicsResource
-Graphics resource wrappers. These have a friend relationship with the graphics device to avoid exposing API specific graphics classes.
+- wiImage
+	- This can render images to the screen
 
+- wiFont
+	- This can render fonts to the screen
 
-#### wiRenderer
-The main renderer. The responsibility of this class is managing the scene graph, space partitioning trees, shaders and graphics states, performs rendering tasks, keeps track of engine level rendering state.
-This also holds an instance of the GraphicsDevice.
-This is a fully static class which means that there can be only a single renderer per application instance.
+- wiGraphicsDevice
+	- This is the low-level rendering interface. It must implement either DirectX1, DirectX12 or Vulkan (at the moment)
+	- See wiGraphicsDevice_DX11 for DirectX11 rendering interface
+	- See wiGraphicsDevice_DX12 for DirectX12 rendering interface
+	- See wiGraphicsDevice_Vulkan for Vulkan rendering interface
 
-#### wiLoader
-This contains rendering and scene graph related classes like Meshes, Armatures, Objects, Transforms, etc.
+- There are many other classes that you can find here, such as wiEmittedParticle, to render emitter components. 
 
+You can see a quickstart guide on the following picture regarding the most common rendering resources:
 
+![InformationSheet](information_sheet.png)
 
-### Physics
-This section provides description for the physics engine interface.
+## Helpers
+A collection of engine-level helper classes
 
-#### wiPHYSICS
-An interface for physics engine integration. The current implementation uses Bullet physics (see wiBULLET) but a private HAVOK physics implementation is also available to use.
+- wiArchive
+	- This is used for serializing binary data
+- wiHelper
+	- Many helper utility functions, like screenshot, readfile, messagebox, splitpath, sleep, etc...
+- wiMath
+	- Math related helper functions, like lerp, triangleArea, HueToRGB, etc...
+- wiProfiler
+	- A timer utility that can measure CPU and GPU timings and used across the engine
+- wiRandom
+	- random number generator
+- ...
 
-#### wiBULLET
-implements the wiPHYSICS interface. Wraps up the open source Bullet physics engine. The source is incuded inside the project and builds itself automatically.
+## Input
+The input interface can be found here
 
+- wiInputManager
+	- This manages all inputs
+	- There are several functions, such as down(), press(), etc. to check button states.
 
+## Network
+TODO: Rewrite the networking systems
 
-### GUI
-This section contains information about the graphical user interface usage.
+## Scripting
+This is the place for the Lua scipt interface. The systems that are bound to Lua have the name of the system prefixed by _BindLua. 
 
-#### wiGUI
-Its purpose is to manages all widgets. Management consists of updating and rendering them.
+- wiLua
+	- The Lua scripting interface
 
-#### wiWidget
-This is an interface to GUI widgets. The following widgets are available:
+## Tools
+This is the place for tools that use engine-level systems
 
-	- wiButton
-	- wiCheckBox
-	- wiLabel
-	- wiSlider
-	- wiComboBox
-	- wiWindow
-	- wiColorPicker
-
-Each widget can register callback events by implementing functions starting with "On" keywork, like OnClick(wiEventArgs args). Each callback sends an wiEventArgs struct for the receiver.
-This struct has members defining the event parameters. A simple callback register can look like this:
-
-	myCheckBox->OnClick([&](wiEventArgs args) {
-		if(args.bValue){
-			messageBox("Activated!");
-		}
-		else
-		{
-			messageBox("Disabled!");
-		}
-	});
-
-The wiEventArgs members are the following:
-	
-	- XMFLOAT2 clickPos;		- click position by the pointer
-	- XMFLOAT2 startPos;		- start point for a drag operation
-	- XMFLOAT2 deltaPos;		- delta vector for a drag operation
-	- XMFLOAT2 endPos;			- endpoint for a drag operation
-	- float fValue;				- floating point result for some events (for example a slider event)
-	- bool bValue;				- boolean result for some events (for example a checkbox click event)
-	- int iValue;				- integer value for some events (for example a slider event)
-	- XMFLOAT4 color;			- color value for a color picker event in linear rgba space with a range between 0 and 1
-	- std::string sValue;		- string result for some events (for example a combo box selection event)
-
-
-
-### Input
-This section is about the input manager instance.
-
-
-
-
-### Helpers
-This section provides information about the various helper utilities.
-
-
-
-### Scripting
-This section contains documentation about the Lua scripting interface implementation side. For scripting API documentation refer to: [Wicked Engine Scripting API](ScriptingAPI-Documentation.md)
-
-
-
-
-### Network
-This section is about networking features.
-
-
-
-
-### Tools
-This section describes engine tools.
-
-
+- wiBackLog
+	- Used to log any messages by any system, from any thread. It can draw itself to the screen. It can execute Lua scripts.
 

@@ -11,7 +11,7 @@ The documentation completion is still pending....
 4. Utility Tools
 	1. Font
 	2. Sprite
-		1. ImageEffects
+		1. ImageParams
 		2. SpriteAnim
 		3. MovingTexAnim
 		4. DrawRecAnim
@@ -22,24 +22,14 @@ The documentation completion is still pending....
 	5. Vector
 	6. Matrix
 	7. Scene
-		1. Node
-		2. Transform
-		3. Cullable
-		4. Object
-		5. Armature
-		6. Ray
-		7. AABB
-		8. Emitter
-		9. Decal
-		10. Material
-		11. Camera
+		TODO
 	8. MainComponent
-	9. RenderableComponent
-		1. Renderable2DComponent
-		2. Renderable3DComponent
-			1. ForwardRenderableComponent
-			2. DeferredRenderableComponent
-		4. LoadingScreenComponent
+	9. RenderPath
+		1. RenderPath2D
+		2. RenderPath3D
+			1. RenderPath3D_Forward
+			2. RenderPath3D_Deferred
+		4. LoadingScreen
 	10. Network
 		1. Server
 		2. Client
@@ -116,7 +106,7 @@ You can use the Renderer with the following functions, all of which are in the g
 - GetRenderHeight(): float result
 - GetCameras() : string result
 - GetCamera(opt String name) : Camera result		-- If string is provided, it will search a camera by name, otherwise, returns the main camera
-- LoadModel(string fileName, opt Matrix transform) : Model? result		-- Returns the model that was loaded
+- LoadModel(string fileName, opt Matrix transform) : int rootEntity	-- Load Model from file. returns a root entity that everything in this model is attached to
 - LoadWorldInfo(string fileName)		-- Loads world information from file
 - DuplicateInstance(Object object) : Object result		-- Copies the specified object in the scene as an instanced mesh
 - SetEnvironmentMap(Texture cubemap)
@@ -152,7 +142,7 @@ getprops(YourObject) on them (where YourObject is the object which is to be insp
 ### Font
 Gives you the ability to render text with a custom font.
 - [constructor]Font(opt string text)
-- SetStyle(string fontstyle)
+- SetStyle(string fontstyle, opt int size = 16)
 - SetText(opt string text)
 - SetSize(int size)
 - SetPos(Vector pos)
@@ -174,16 +164,16 @@ Gives you the ability to render text with a custom font.
 ### Sprite
 Render images on the screen.
 - [constructor]Sprite(opt string texture, opt string maskTexture, opt string normalMapTexture)
-- SetEffects(ImageEffects effects)
-- GetEffects() : ImageEffects result
+- SetParams(ImageParams effects)
+- GetParams() : ImageParams result
 - SetAnim(SpriteAnim anim)
 - GetAnim() : SpriteAnim result
 - Destroy()
 
-#### ImageEffects
+#### ImageParams
 Specify Sprite properties, like position, size, etc.
-- [constructor]ImageEffects(opt float width, opt float height)
-- [constructor]ImageEffects(float posX, float posY, float width, opt float height)
+- [constructor]ImageParams(opt float width, opt float height)
+- [constructor]ImageParams(float posX, float posY, float width, opt float height)
 - GetPos() : Vector result
 - GetSize() : Vector result
 - GetOpacity() : float result
@@ -209,7 +199,7 @@ Animate Sprites easily with this helper.
 - SetScaleX(float val)
 - SetScaleY(float val)
 - SetMovingTexAnim(MovingTexAnim val)
-- SetDrawRecAnim(DrawRecAnim val)
+- SetDrawRectAnim(DrawRectAnim val)
 - GetRot() : float result
 - GetRotation() : float result
 - GetOpacity() : float result
@@ -219,7 +209,7 @@ Animate Sprites easily with this helper.
 - GetScaleX() : float result
 - GetScaleY() : float result
 - GetMovingTexAnim() : GetMovingTexAnim result
-- GetDrawRecAnim() : GetDrawRecAnim result
+- GetDrawRectAnim() : GetDrawRectAnim result
 
 #### MovingTexAnim
 Move texture continuously along the sprite.
@@ -233,17 +223,12 @@ Move texture continuously along the sprite.
 Animate sprite frame by frame.
 - [constructor]DrawRecAnim()
 - SetOnFrameChangeWait(float val)
-- SetFrameCount(float val)
-- SetJumpX(float val)
-- SetJumpY(float val)
-- SetSizX(float val)
-- SetSizY(float val)
-- GetOnFrameChangeWait() : float result
-- GetFrameCount() : float result
-- GetJumpX() : float result
-- GetJumpY() : float result
-- GetSizX() : float result
-- GetSizY() : float result
+- SetFrameRate(float val)
+- SetFrameCount(int val)
+- SetHorizontalFrameCount(int val)
+- GetFrameRate() : float result
+- GetFrameCount() : int result
+- GetHorizontalFrameCount() : int result
 
 ### Texture
 Just holds texture information in VRAM.
@@ -312,152 +297,25 @@ A four by four matrix, efficient calculations with SIMD support.
 - Inverse(Matrix m) : Matrix result, float determinant
 
 ### Scene
-Manipulate the 3D scene with these objects. 
+Manipulate the 3D scene with these components. TODO: rewrite this section
 
-#### Node
-The basic entity in the scene. It has a name.
-- [constructor]Node()
-- GetName() : string
-- SetName(string name)
-- SetLayerMask(uint value)
-- GetLayerMask() : uint result
-
-#### Transform
-Everything in the scene is a transform. It defines a point in the space by location, size, and rotation.
-It provides several key features of parenting. 
-It inherits functions from Node.
-- [constructor]Transform()
-- AttachTo(Transform parent, opt boolean translation,rotation,scale)
-- Detach()
-- Scale(Vector vector)
-- Rotate(Vector vectorRollPitchYaw)
-- Translate(Vector vector)
-- Lerp(Transform a,b, float t)
-- CatmullRom(Transform a,b,c,d, float t)
-- MatrixTransform(Matrix matrix)
-- GetMatrix() : Matrix result
-- ClearTransform()
-- SetTransform(Transform t)
-- GetPosition() : Vector result
-- GetRotation() : Vector resultQuaternion
-- GetScale() : Vector resultXYZ
-
-#### Cullable
-Can be tested againt the view frustum, AABBs, rays, space partitioning trees. 
-It inherits functions from Transform.
-- [constructor]Cullable()
-- Intersects(Cullable cullable) : boolean result
-- Intersects(Ray cullable) : boolean result
-- Intersects(Vector cullable) : boolean result
-- GetAABB() : AABB result
-- SetAABB(AABB aabb)
-
-#### Object
-It is a renderable entity (optionally), which contains a Mesh.
-It inherits functions from Cullable.
-- [void-constructor]Object()
-- EmitTrail(Vector color, opt float fadeSpeed=0.06)
-- SetTrailTex(Texture tex)
-- SetTrailDistortTex(Texture tex)
-- SetTransparency(float value)
-- GetTransparency() : float? result
-- SetColor(Vector rgb)
-- GetColor() : Vector? rgb
-- IsValid() : boolean result
-
-#### Armature
-It animates meshes.
-It inherits functions from Transform.
-- [void-constructor]Armature()
-- GetAction(opt string animLayer = "") : string? result
-- GetActions() : string? result
-- GetBones() : string? result
-- GetBone(string name) : Transform? result
-- GetFrame(opt string animLayer = "") : float? result
-- GetFrameCount(opt string animLayer = "") : float? result
-- IsValid() : boolean result
-- ChangeAction(opt string name = "", opt float blendFrames = 0, opt string animLayer = "", opt float weight = 1.0)
-- StopAction(opt string animLayer = "")
-- PauseAction(opt string animLayer = "")
-- PlayAction(opt string animLayer = "")
-- ResetAction(opt string animLayer = "")
-- AddAnimLayer(string animLayer)
-- DeleteAnimLayer(string animLayer)
-- SetAnimLayerWeight(float weight, opt string animLayer="")
-- SetAnimLayerLooped(float weight, opt string animLayer="")
-
-#### Ray
-Can intersect with AABBs, Cullables.
-- [constructor]Ray(opt Vector origin, direction)
-- GetOrigin() : Vector result
-- GetDirection() : Vector result
-
-#### AABB
-Axis Aligned Bounding Box. Can be intersected with any shape, or ray.
-- [constructor]AABB(opt Vector min,max)
-- Intersects(AABB aabb)
-- Transform(Matrix mat)
-- GetMin() : Vector result
-- GetMax() : Vector result
-
-#### Emitter
-Emitter particlesystem.
-- [void-constructor]Emitter()
-- GetName() : string? name
-- SetName(string name)
-- GetMotionBlur() : float? amount
-- SetMotionBlur(float amount)
-- Burst(float amount)
-- IsValid() : bool value
-
-#### Decal
-Decal is a texture sticker placeable onto any surface. It is a Transform and a Cullable.
-- [constructor]Decal(opt Vector tra=Vector(0,0,0), sca=Vector(1,1,1), rotQuaternion=Vector(0,0,0,1), opt string tex="", nor="")
-- SetTexture(string tex)
-- SetNormal(string tex)
-- SetLife(float life)
-- GetLife() : float result
-- SetFadeStart(float start)
-- GetFadeStart() : float result
-
-#### Material
-- [constructor]Material(opt string name="")
-- GetName() : string name
-- SetName(string value)
-
-#### Camera
-Main camera looking at the scene. It is a Transform.
-- [constructor]Camera()
-- SetFarPlane(float val)
-- SetNearPlane(float val)
-- SetFOV(float val)
-- GetFarPlane() : float result
-- GetNearPlane() : float result
-- GetFOV() : float result
-- Lerp(Camera a,b, float t)
-- CatmullRom(Camera a,b,c,d, float t)
-
-#### Model
-Collection of Objects, Armatures, Lights, Decals. Also a transform by itself
-- [constructor]Model()
 
 ### MainComponent
 The main component which holds information and manages the running of the current program.
 - [outer]main : MainComponent
 - [void-constructor]MainComponent()
 - GetContent() : Resource? result
-- GetActiveComponent() : RenderableComponent? result
-- SetActiveComponent(RenderableComponent component, opt int fadeFrames,fadeColorR,fadeColorG,fadeColorB)
+- GetActivePath() : RenderPath? result
+- SetActivePath(RenderPath path, opt float fadeSeconds,fadeColorR,fadeColorG,fadeColorB)
 - SetFrameSkip(bool enabled)
 - SetInfoDisplay(bool active)
 - SetWatermarkDisplay(bool active)
 - SetFPSDisplay(bool active)
-- SetCPUDisplay(bool active)
 - [outer]SetProfilerEnabled(bool enabled)
 
-### RenderableComponent
-A RenderableComponent describes a scene wich can render itself.
-- [constructor]RenderableComponent()
+### RenderPath
+A RenderPath describes a scene wich can render itself.
+- [constructor]RenderPath()
 - GetContent() : Resource result
 - Initialize()
 - Load()
@@ -473,9 +331,9 @@ A RenderableComponent describes a scene wich can render itself.
 - GetLayerMask() : uint result
 - SetLayerMask(uint mask)
 
-#### Renderable2DComponent
+#### RenderPath2D
 It can hold Sprites and Fonts and can sort them by layers, update and render them.
-- [constructor]Renderable2DComponent()
+- [constructor]RenderPath2D()
 - AddSprite(Sprite sprite, opt string layer)
 - AddFont(Font font, opt string layer)
 - RemoveFont(Font font)
@@ -489,10 +347,10 @@ It can hold Sprites and Fonts and can sort them by layers, update and render the
 - SetSpriteOrder(Sprite sprite, int order)
 - SetFontOrder(Font font, int order)
 
-#### Renderable3DComponent
+#### RenderPath3D
 A 3D scene can either be rendered by a Forward or Deferred render path. 
-It inherits functions from Renderable2DComponent, so it can render a 2D overlay.
-- [void-constructor]Renderable3DComponent()
+It inherits functions from RenderPath2D, so it can render a 2D overlay.
+- [void-constructor]RenderPath3D()
 - SetSSAOEnabled(bool value)
 - SetSSREnabled(bool value)
 - SetShadowsEnabled(bool value)
@@ -516,30 +374,31 @@ It inherits functions from Renderable2DComponent, so it can render a 2D overlay.
 - SetMSAASampleCount(int count)
 - SetStereogramEnabled(bool value)
 - SetSharpenFilterEnabled(bool value)
-- SetSharpenFilterAmount(bool value)
+- SetSharpenFilterAmount(float value)
+- SetExposure(float value)
 
-##### ForwardRenderableComponent
+##### RenderPath3D_Forward
 It renders the scene contained by the Renderer in a forward render path. The component does not hold the scene information, 
 only the effects to render the scene. The scene is managed and ultimately rendered by the Renderer.
-It inherits functions from Renderable3DComponent.
-- [constructor]ForwardRenderableComponent()
+It inherits functions from RenderPath3D.
+- [constructor]RenderPath3D_Forward()
 
-##### TiledForwardRenderableComponent
+##### RenderPath3D_TiledForward
 It renders the scene contained by the Renderer in a tiled forward render path. The component does not hold the scene information, 
 only the effects to render the scene. The scene is managed and ultimately rendered by the Renderer.
-It inherits functions from ForwardRenderable3DComponent.
-- [constructor]TiledForwardRenderableComponent()
+It inherits functions from RenderPath3D_Forward3D.
+- [constructor]RenderPath3D_TiledForward()
 
-##### DeferredRenderableComponent
+##### RenderPath3D_Deferred
 It renders the scene contained by the Renderer in a deferred render path. The component does not hold the scene information, 
 only the effects to render the scene. The scene is managed and ultimately rendered by the Renderer.
-It inherits functions from Renderable3DComponent.
-- [constructor]DeferredRenderableComponent()
+It inherits functions from RenderPath3D.
+- [constructor]RenderPath3D_Deferred()
 
-#### LoadingScreenComponent
-It is a Renderable2DComponent but one that internally manages resource loading and can display information about the process.
-It inherits functions from Renderable2DComponent.
-- [constructor]LoadingScreenComponent()
+#### LoadingScreen
+It is a RenderPath2D but one that internally manages resource loading and can display information about the process.
+It inherits functions from RenderPath2D.
+- [constructor]LoadingScreen()
 - AddLoadingTask(string taskScript)
 - OnFinished(string taskScript)
 

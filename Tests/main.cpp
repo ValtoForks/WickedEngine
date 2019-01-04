@@ -47,8 +47,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_WICKEDENGINETESTS));
 
-	tests.Initialize();
-
 
 	MSG msg = { 0 };
 	while (msg.message != WM_QUIT)
@@ -159,6 +157,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
         }
         break;
+	case WM_SIZE:
+	{
+		if (wiRenderer::GetDevice() != nullptr)
+		{
+			int width = LOWORD(lParam);
+			int height = HIWORD(lParam);
+
+			wiRenderer::GetDevice()->SetResolution(width, height);
+			wiRenderer::GetCamera().CreatePerspective((float)wiRenderer::GetInternalResolution().x, (float)wiRenderer::GetInternalResolution().y, 0.1f, 800);
+		}
+	}
+	break;
 	case WM_KEYDOWN:
 		switch (wParam)
 		{

@@ -1,7 +1,6 @@
 #pragma once 
 #include "CommonInclude.h"
-#include "wiGraphicsAPI.h"
-#include "ShaderInterop.h"
+#include "wiGraphicsDevice.h"
 #include "wiColor.h"
 
 
@@ -9,28 +8,26 @@
 enum wiFontAlign
 {
 	WIFALIGN_LEFT,
-	// same as mid
 	WIFALIGN_CENTER,
-	// same as center
-	WIFALIGN_MID,
 	WIFALIGN_RIGHT,
 	WIFALIGN_TOP,
-	WIFALIGN_BOTTOM,
-	WIFALIGN_COUNT,
+	WIFALIGN_BOTTOM
 };
 
-class wiFontProps
+static const int WIFONTSIZE_DEFAULT = 16;
+
+struct wiFontParams
 {
-public:
-	int size;
-	int spacingX, spacingY;
 	int posX, posY;
+	int size = WIFONTSIZE_DEFAULT; // line height in pixels
+	float scaling = 1;
+	int spacingX, spacingY;
 	wiFontAlign h_align, v_align;
 	wiColor color;
 	wiColor shadowColor;
 
-	wiFontProps(int posX = 0, int posY = 0, int size = -1, wiFontAlign h_align = WIFALIGN_LEFT, wiFontAlign v_align = WIFALIGN_TOP
-		, int spacingX = 2, int spacingY = 1, const wiColor& color = wiColor(255, 255, 255, 255), const wiColor& shadowColor = wiColor(0,0,0,0))
+	wiFontParams(int posX = 0, int posY = 0, int size = 16, wiFontAlign h_align = WIFALIGN_LEFT, wiFontAlign v_align = WIFALIGN_TOP
+		, int spacingX = 0, int spacingY = 0, const wiColor& color = wiColor(255, 255, 255, 255), const wiColor& shadowColor = wiColor(0,0,0,0))
 		:posX(posX), posY(posY), size(size), h_align(h_align), v_align(v_align), spacingX(spacingX), spacingY(spacingY), color(color), shadowColor(shadowColor)
 	{}
 };
@@ -38,84 +35,34 @@ public:
 class wiFont
 {
 public:
-	static std::string FONTPATH;
-protected:
-	struct Vertex
-	{
-		XMFLOAT2 Pos;
-		XMHALF2 Tex;
-	};
-	static wiGraphicsTypes::GPURingBuffer       *vertexBuffer;
-	static wiGraphicsTypes::GPUBuffer           *indexBuffer;
-
-	static wiGraphicsTypes::VertexLayout		*vertexLayout;
-	static wiGraphicsTypes::VertexShader		*vertexShader;
-	static wiGraphicsTypes::PixelShader			*pixelShader;
-	static wiGraphicsTypes::BlendState			*blendState;
-	static wiGraphicsTypes::RasterizerState		*rasterizerState;
-	static wiGraphicsTypes::DepthStencilState	*depthStencilState;
-	static wiGraphicsTypes::GraphicsPSO			*PSO;
-	
-	static void SetUpStates();
-public:
-	static void LoadShaders();
-private:
-	static void LoadVertexBuffer();
-	static void LoadIndices();
-
-
-
-	struct wiFontStyle{
-		std::string name;
-		wiGraphicsTypes::Texture2D* texture;
-		
-		struct LookUp{
-			int ascii;
-			char character;
-			float left;
-			float right;
-			int pixelWidth;
-		};
-		LookUp lookup[128];
-		int texWidth, texHeight;
-		int lineHeight;
-
-		wiFontStyle(){}
-		wiFontStyle(const std::string& newName);
-		void CleanUp();
-	};
-	static std::vector<wiFontStyle> fontStyles;
-
-
-	static void ModifyGeo(volatile Vertex* vertexList, const std::wstring& text, wiFontProps props, int style);
-
-public:
 	static void Initialize();
-	static void SetUpStaticComponents();
-	static void CleanUpStatic();
+	static void CleanUp();
+
+	static void LoadShaders();
+	static void BindPersistentState(GRAPHICSTHREAD threadID);
+	static wiGraphicsTypes::Texture2D* GetAtlas();
+
+	// Returns the font path that can be modified
+	static std::string& GetFontPath();
+
+	// Create a font. Returns fontStyleID that is reusable. If font already exists, just return its ID
+	static int AddFontStyle(const std::string& fontName);
 
 	std::wstring text;
-	wiFontProps props;
+	wiFontParams params;
 	int style;
 
-	wiFont(const std::string& text = "", wiFontProps props = wiFontProps(), int style = 0);
-	wiFont(const std::wstring& text, wiFontProps props = wiFontProps(), int style = 0);
-	~wiFont();
-
+	wiFont(const std::string& text = "", wiFontParams params = wiFontParams(), int style = 0);
+	wiFont(const std::wstring& text, wiFontParams params = wiFontParams(), int style = 0);
 	
 	void Draw(GRAPHICSTHREAD threadID);
 
-
 	int textWidth();
 	int textHeight();
-
-	static void addFontStyle( const std::string& toAdd );
-	static int getFontStyleByName( const std::string& get );
 
 	void SetText(const std::string& text);
 	void SetText(const std::wstring& text);
 	std::wstring GetText();
 	std::string GetTextA();
 
-	void CleanUp();
 };

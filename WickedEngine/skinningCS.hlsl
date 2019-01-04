@@ -20,8 +20,6 @@ RAWBUFFER(vertexBuffer_POS, SKINNINGSLOT_IN_VERTEX_POS);
 RAWBUFFER(vertexBuffer_BON, SKINNINGSLOT_IN_VERTEX_BON);
 
 RWRAWBUFFER(streamoutBuffer_POS, SKINNINGSLOT_OUT_VERTEX_POS);
-RWRAWBUFFER(streamoutBuffer_PRE, SKINNINGSLOT_OUT_VERTEX_PRE);
-
 
 
 inline void Skinning(inout float3 pos, inout float3 nor, in float4 inBon, in float4 inWei)
@@ -87,7 +85,7 @@ void main(uint3 DTid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
 		nor.x = (float)((pos_nor_u.w >> 0) & 0x000000FF) / 255.0f * 2.0f - 1.0f;
 		nor.y = (float)((pos_nor_u.w >> 8) & 0x000000FF) / 255.0f * 2.0f - 1.0f;
 		nor.z = (float)((pos_nor_u.w >> 16) & 0x000000FF) / 255.0f * 2.0f - 1.0f;
-		nor.w = (float)((pos_nor_u.w >> 24) & 0x000000FF) / 255.0f; // wind
+		nor.w = (float)((pos_nor_u.w >> 24) & 0x000000FF) / 255.0f; // subsetindex
 	}
 
 
@@ -127,10 +125,9 @@ void main(uint3 DTid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
 		pos_nor_u.w |= (uint)((nor.x * 0.5f + 0.5f) * 255.0f) << 0;
 		pos_nor_u.w |= (uint)((nor.y * 0.5f + 0.5f) * 255.0f) << 8;
 		pos_nor_u.w |= (uint)((nor.z * 0.5f + 0.5f) * 255.0f) << 16;
-		pos_nor_u.w |= (uint)(nor.w * 255.0f) << 24; // wind
+		pos_nor_u.w |= (uint)(nor.w * 255.0f) << 24; // subsetindex
 	}
 
 	// Store data:
-	streamoutBuffer_PRE.Store4(fetchAddress_POS_NOR, streamoutBuffer_POS.Load4(fetchAddress_POS_NOR)); // copy prev frame current pos to current frame prev pos
 	streamoutBuffer_POS.Store4(fetchAddress_POS_NOR, pos_nor_u);
 }

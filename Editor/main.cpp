@@ -56,8 +56,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_WICKEDENGINEGAME));
 
-	editor.Initialize();
-
 
 	MSG msg = { 0 };
 	while (msg.message != WM_QUIT)
@@ -131,8 +129,6 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 	   if (enabled != 0)
 	   {
 		   file >> voidStr >> x >> voidStr >> y >> voidStr >> w >> voidStr >> h >> voidStr >> editor.fullscreen >> voidStr >> borderless;
-		   editor.screenW = w;
-		   editor.screenH = h;
 	   }
    }
    file.close();
@@ -206,17 +202,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
         } 
         break;
-	case WM_MBUTTONDOWN:
-		ShowCursor(false);
-		break;
-	case WM_MBUTTONUP:
-		ShowCursor(true);
+	case WM_SIZE:
+		{
+			if (wiRenderer::GetDevice() != nullptr)
+			{
+				int width = LOWORD(lParam);
+				int height = HIWORD(lParam);
+
+				wiRenderer::GetDevice()->SetResolution(width, height);
+				wiRenderer::GetCamera().CreatePerspective((float)wiRenderer::GetInternalResolution().x, (float)wiRenderer::GetInternalResolution().y, 0.1f, 800);
+			}
+		}
 		break;
 	case WM_MOUSEWHEEL:
 		{
-		XMFLOAT4 pointer = wiInputManager::GetInstance()->getpointer();
+		XMFLOAT4 pointer = wiInputManager::getpointer();
 		float delta = GET_WHEEL_DELTA_WPARAM(wParam) / (float)WHEEL_DELTA;
-		wiInputManager::GetInstance()->setpointer(XMFLOAT4(pointer.x, pointer.y, delta, 0));
+		wiInputManager::setpointer(XMFLOAT4(pointer.x, pointer.y, delta, 0));
 		}
 		break;
 	case WM_KEYDOWN:

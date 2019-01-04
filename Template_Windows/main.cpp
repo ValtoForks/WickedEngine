@@ -43,9 +43,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_TEMPLATEWINDOWS));
 
-	wiRenderer::SHADERPATH = "../WickedEngine/shaders/"; // search for shaders elsewhere
-	wiFont::FONTPATH = "../WickedEngine/fonts/"; // search for fonts elsewhere
-	main.Initialize(); // initialize engine systems (mandatory)
+	wiRenderer::GetShaderPath() = "../WickedEngine/shaders/"; // search for shaders elsewhere
+	wiFont::GetFontPath() = "../WickedEngine/fonts/"; // search for fonts elsewhere
 	main.infoDisplay.active = true; // just show some basic info...
 
 
@@ -157,6 +156,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
         }
         break;
+	case WM_SIZE:
+		{
+			if (wiRenderer::GetDevice() != nullptr)
+			{
+				int width = LOWORD(lParam);
+				int height = HIWORD(lParam);
+
+				wiRenderer::GetDevice()->SetResolution(width, height);
+				wiRenderer::GetCamera().CreatePerspective((float)wiRenderer::GetInternalResolution().x, (float)wiRenderer::GetInternalResolution().y, 0.1f, 800);
+			}
+		}
+		break;
 	case WM_KEYDOWN:
 		switch (wParam)
 		{

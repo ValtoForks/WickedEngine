@@ -16,14 +16,15 @@ enum PICKTYPE
 	PICK_ENVPROBE			= 32,
 	PICK_FORCEFIELD			= 64,
 	PICK_EMITTER			= 128,
-	PICK_CAMERA				= 256,
-	PICK_ARMATURE			= 512,
+	PICK_HAIR				= 256,
+	PICK_CAMERA				= 512,
+	PICK_ARMATURE			= 1024,
 };
 
 class RendererWindow
 {
 public:
-	RendererWindow(wiGUI* gui, Renderable3DComponent* component);
+	RendererWindow(wiGUI* gui, RenderPath3D* path);
 	~RendererWindow();
 
 	wiGUI* GUI;
@@ -60,6 +61,7 @@ public:
 	wiCheckBox* pickTypeDecalCheckBox;
 	wiCheckBox* pickTypeForceFieldCheckBox;
 	wiCheckBox* pickTypeEmitterCheckBox;
+	wiCheckBox* pickTypeHairCheckBox;
 	wiCheckBox* pickTypeCameraCheckBox;
 	wiCheckBox* pickTypeArmatureCheckBox;
 	wiSlider*	speedMultiplierSlider;
@@ -71,6 +73,7 @@ public:
 	wiCheckBox* temporalAADebugCheckBox;
 	wiComboBox* textureQualityComboBox;
 	wiSlider*	mipLodBiasSlider;
+	wiSlider*	lightmapBakeBounceCountSlider;
 
 	wiCheckBox* freezeCullingCameraCheckBox;
 

@@ -2,33 +2,40 @@
 
 # Wicked Engine
 
-[![Build status][s1]][av] [![Download][s4]][do] [![License: MIT][s3]][li] [![Join the chat at https://gitter.im/WickedEngine/Lobby][s2]][gi]
+[![Build status][s1]][av] [![License: MIT][s3]][li] [![Join the chat at https://gitter.im/WickedEngine/Lobby][s2]][gi]
 <a href="https://twitter.com/intent/follow?screen_name=turanszkij">
         <img src="https://img.shields.io/twitter/follow/turanszkij.svg?style=social"
-            alt="follow on Twitter"></a>
+            alt="follow on Twitter"></a><br/>
+[![DownloadEditor][s4]][do] [![DownloadTests][s5]][dt] 
 
 [s1]: https://ci.appveyor.com/api/projects/status/3dbcee5gd6i7qh7v?svg=true
 [s2]: https://badges.gitter.im/WickedEngine/Lobby.svg
 [s3]: https://img.shields.io/badge/License-MIT-yellow.svg
 [s4]: https://img.shields.io/badge/download%20build-editor-blue.svg
+[s5]: https://img.shields.io/badge/download%20build-samples-blue.svg
 
 [av]: https://ci.appveyor.com/project/turanszkij/wickedengine
 [gi]: https://gitter.im/WickedEngine/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
 [li]: https://opensource.org/licenses/MIT
 [do]: https://ci.appveyor.com/api/projects/turanszkij/wickedengine/artifacts/WickedEngineEditor.zip?branch=master
+[dt]: https://ci.appveyor.com/api/projects/turanszkij/wickedengine/artifacts/WickedEngineTests.zip?branch=master
+[ba]: https://github.com/turanszkij/WickedEngine/tree/old-system-backup
 
 ### Overview:
 
 Wicked Engine is an open-source game engine written in C++. The main focus is to be easy to set up and use, light weight, high performance, and graphically advanced.
 The full source code is provided with the MIT license, which means, anyone is free to use it for anything without additional considerations. The code shall not contain any parts with other licensing. The code is hosted on GitHub: https://github.com/turanszkij/WickedEngine For any questions, please open an issue there.
 
+From version <b>0.21.0</b> onwards, the engine was changed to use Entity-Component System and the old Object-Oriented system was dropped. <b>It is not backwards-compatible</b>, so assets/scripts made with the old system are unfortunately not usable.
+You can find a snapshot of the old Object-Oriented codebase (0.20.6) [here][ba], but it will not be updated anymore.
+
+<img align="right" src="https://turanszkij.files.wordpress.com/2018/11/gltfanim.gif"/>
+
 [Documentation](Documentation/WickedEngine-Documentation.md)<br/>
 [Scripting API Documentation](Documentation/ScriptingAPI-Documentation.md)<br/>
 [Features](features.txt)<br/>
 [Devblog](https://turanszkij.wordpress.com/)<br/>
 [Videos](https://www.youtube.com/playlist?list=PLLN-1FTGyLU_HJoC5zx6hJkB3D2XLiaxS)<br/>
-
-![Windmill](logo/windmill.png)
 
 To test the engine, this solution contains several projects which you can build out of the box with Visual Studio 2017. There shall be no external dependencies. You can now also [download the latest Editor build!][do]
 - You can run the "Editor" or the "Tests" project to check out features and play around in a 3D environment, load models, scripts, etc. 
@@ -38,6 +45,8 @@ To test the engine, this solution contains several projects which you can build 
 - There are multiple sample models in the "models" folder. You can load any of them inside the Editor.
 - There are multiple sample LUA scripts in the "scripts" folder. You can load any of them inside the Editor, but please check how to use them first by reading the first few lines of the scripts.
 - Please open an Issue here on GitHub if you encounter any difficulties.
+
+![Emitter](https://turanszkij.files.wordpress.com/2018/11/emitter_skinned.gif) ![Drone](https://turanszkij.files.wordpress.com/2018/11/drone_anim.gif)
 
 The default renderer is DirectX 11. The DirectX 12 renderer is now available (experimental). Vulkan renderer is now available (experimental).
 You can specify command line arguments for each application to switch between render devices or other settings. Currently the list of options:
@@ -64,13 +73,17 @@ You can specify command line arguments for each application to switch between re
   </tr>
 </table>
 
+<img align="left" src="https://turanszkij.files.wordpress.com/2018/11/soft.gif"/>
+
 * *Before enabling the Vulkan API, you must first also compile SPIR-V shaders. This step is not yet included in the standard build process. First, run the "generate_shader_buildtask_spirv.py"
 Python script which will generate the SPIR-V shader building program "build_SPIRV.bat". Run "build_SPIRV.bat" to build all HLSL shaders as SPIR-V bytecode format for Vulkan. Shader loading after this 
 is automatic if you start the application with Vulkan support.
 This feature is experimental, not tested thoroughly yet.
 
-* **To load HLSL 6 shaders, replicate the exact steps as with SPIR-V, but the pyhton script you should run is called "generate_shader_buildtask_spirv.py" which will generate "build_HLSL6.bat". 
+* **To load HLSL 6 shaders, replicate the exact steps as with SPIR-V above(*), but the python script you should run is called "generate_shader_buildtask_hlsl6.py" which will generate "build_HLSL6.bat". 
 This feature is experimental, not tested thoroughly yet.
+
+<img align="right" src="https://turanszkij.files.wordpress.com/2018/11/physics.gif"/>
 
 ### Platforms:
 - Windows PC Desktop (x86, x64)
@@ -83,8 +96,7 @@ This feature is experimental, not tested thoroughly yet.
 - Visual Studio 2017
 - Windows 10 SDK
 
-![Sponza](logo/sponza.png)
-
+<img align="right" src="https://turanszkij.files.wordpress.com/2018/11/trace.gif"/>
 
 ### Getting started: 
 
@@ -103,28 +115,32 @@ Then set the following dependencies to this library in Visual Studio this way in
 	- Directory of your built .lib file (For example ./x64/Release)
 4. Also be sure to compile with a non-DLL runtime library for Release builds:
 	- Project settings -> C/C++ -> Code Generation -> Runtime Library -> Multi threaded
+	
+<img align="left" src="https://turanszkij.files.wordpress.com/2018/05/sphinit.gif"/>
 
 When your project settings are set up, time to #include "WickedEngine.h" in your source. I recommend to include this
 in the precompiled header file. This will enable the use of all the engine features and link the necessary binaries. After this, you should already be able to build your project. 
 But this will not render anything for you yet, because first you must initialize the engine. For this, you should create a main program component by deriving from MainComponent class of 
-Wicked Engine and initialize it appropriately by calling its Initialize() and SetWindow() functions, and calling its run() function inside the main message loop. 
-You should also activate a RenderableComponent for the rendering to begin. You can see an example for this inside the Tests and Editor projects.
+Wicked Engine and initialize it appropriately by calling the SetWindow() and Run() functions inside the main message loop. 
+You should also ActivatePath() for the rendering to begin. You can see an example for this inside the Tests and Editor projects.
 
 If you want to create an UWP application, #define WINSTORE_SUPPORT preprocessor for the whole implementing project and link against the WickedEngine_UWP library.
 
 When everything is initialized properly, you should see a black screen. From this point, you can make an application by writing scripts in either C++ or Lua code. Please see the Tests project for such examples.
+
+<img align="right" src="https://turanszkij.files.wordpress.com/2018/11/hairparticle2.gif"/>
 
 ### Contents:
 
 - ./Documentation/						- Documentation files
 - ./logo/								- Logo artwork images
 - ./models/								- Sample model files
+- ./scripts/							- Sample LUA script files
 - ./WickedEngine/						- Wicked Engine Library project
 - ./Editor/								- Editor project
 - ./Tests/								- Testing framework project
 - ./Template_Windows					- Template project for Windows applications
 - ./WickedEngine.sln 					- Visual Studio Solution
-- ./io_export_wicked_wi_bin.py 			- Blender 2.72+ script to export scene
 
 ### Scripting API:
 
@@ -133,44 +149,12 @@ contain a scripting input method toggled by the "Home" key. A blue screen will b
 For further details, please check the scripting API documentation: [Wicked Engine Scripting API](Documentation/ScriptingAPI-Documentation.md)
 
 
-### Editor:
-
-The editor is now available but also work in progress. Just build the editor project and run it, then you will be presented with a blank scene.
-You can import files exported from Blender (.wio) with the scipt described below. You can also save models into the .wimf format from the Editor
-and open them. You can also open OBJ format models, which are very simple model files, not supporting many features provided by the engine.
-Test model and scene files are now available in the WickedEngine/models directory.
-
-
 ### Model import/export:
 
 The Editor supports the importing of some common model formats (the list will potentially grow): <b>OBJ</b>, <b>GLTF 2.0</b> <br/>
-The Engine itself can open the serialized model format (<b>WIMF</b>) only. The preferred workflow is to import models into the editor, and save them out to <b>WIMF</b>, then any WickedEngine application can open them.<br/>
+The Engine itself can open the serialized model format (<b>WISCENE</b>) only. The preferred workflow is to import models into the editor, and save them out to <b>WISCENE</b>, then any WickedEngine application can open them.<br/>
+The old Blender exporter script is now not supported! (from version 0.21.0)
 
-There is an additional model format designed for Blender supporting like skeletal animations, particle systems, physics, etc... Use the provided Blender exporter python script: <b>io_export_wicked_wi_bin.py</b> <br/>
-The Editor can open <b>WIO</b> files exported from Blender, and save them as <b>WIMF</b> models.<br/><br/>
-
-Notes on exporting:
-- Names should not contain spaces inside Blender<br/>
-	The problem is the c++ side code which parses the text files such as it breaks parsing on spaces. 
-	Mesh files are already exported as binary, so those are okay
-	Suggested fix: write binary export for everything
-- Separate files generated<br/>
-	I've written the exporter to write different categories of the scene to different files for easier debugging
-	from a text editor. If the exporter is rewritten to write binary for everything, such debugging will
-	not be possible so might as well merge the files (except mesh files and error message file)
-- Only animation supported is skeletal animation<br/>
-- Animation Action names should contain their armature's name so that the exporter matches them correctly<br/>
-	Suggested fix: find a better way of matching armatures and actions
-- Animation only with linear curves (so no curves)<br/>
-	Suggested fix: implement curves support into the engine and the exporter
-- Only one uv map support<br/>
-	Light maps and other effects requiring multiple uv maps are not possible yet.
+![Sponza](https://turanszkij.files.wordpress.com/2018/12/sponza.png)
 	
-
-### Graphics:
-
-Please feel free to learn/copy/use any shaders or rendering techniques that you can find here. General information about the engine that might help you port these to your own solution
-is summarized in the image below:
-
-![InformationSheet](Documentation/information_sheet.png)
 

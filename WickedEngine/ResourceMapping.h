@@ -16,30 +16,30 @@
 
 // t slot:
 
-// These are reserved slots for the renderer:
+// These are reserved slots for systems:
 #define TEXSLOT_DEPTH				0
 #define TEXSLOT_LINEARDEPTH			1
 
 #define TEXSLOT_GBUFFER0			2
 #define TEXSLOT_GBUFFER1			3
 #define TEXSLOT_GBUFFER2			4
-#define TEXSLOT_GBUFFER3			5
-#define TEXSLOT_GBUFFER4			6
 
+#define TEXSLOT_GLOBALLIGHTMAP		7
 #define TEXSLOT_ENVMAPARRAY			8
-#define TEXSLOT_DECALATLAS			11
+#define TEXSLOT_DECALATLAS			9
 
-#define TEXSLOT_SHADOWARRAY_2D		12
-#define TEXSLOT_SHADOWARRAY_CUBE	13
-#define TEXSLOT_SHADOWARRAY_TRANSPARENT 14
+#define TEXSLOT_SHADOWARRAY_2D		10
+#define TEXSLOT_SHADOWARRAY_CUBE	11
+#define TEXSLOT_SHADOWARRAY_TRANSPARENT 12
 
-#define TEXSLOT_VOXELRADIANCE		15
+#define TEXSLOT_VOXELRADIANCE		13
 
-#define SBSLOT_TILEFRUSTUMS			16
-#define SBSLOT_ENTITYINDEXLIST		17
-#define SBSLOT_ENTITYARRAY			18
-#define SBSLOT_MATRIXARRAY			19
+#define SBSLOT_TILEFRUSTUMS			14
+#define SBSLOT_ENTITYINDEXLIST		15
+#define SBSLOT_ENTITYARRAY			16
+#define SBSLOT_MATRIXARRAY			17
 
+#define TEXSLOT_FONTATLAS			19
 
 // Ondemand textures are 2d textures and declared in shader globals, these can be used independently in any shader:
 #define TEXSLOT_ONDEMAND0			20
@@ -70,7 +70,7 @@
 
 
 
-// RenderableComponent texture mappings:
+// RenderPath texture mappings:
 #define TEXSLOT_RENDERABLECOMPONENT_REFLECTION		TEXSLOT_ONDEMAND6
 #define TEXSLOT_RENDERABLECOMPONENT_REFRACTION		TEXSLOT_ONDEMAND7
 #define TEXSLOT_RENDERABLECOMPONENT_WATERRIPPLES	TEXSLOT_ONDEMAND8

@@ -8,23 +8,23 @@ using namespace std;
 namespace wiRectPacker
 {
 
-	bool area(rect_xywhf* a, rect_xywhf* b) {
+	bool area(rect_xywh* a, rect_xywh* b) {
 		return a->area() > b->area();
 	}
 
-	bool perimeter(rect_xywhf* a, rect_xywhf* b) {
+	bool perimeter(rect_xywh* a, rect_xywh* b) {
 		return a->perimeter() > b->perimeter();
 	}
 
-	bool max_side(rect_xywhf* a, rect_xywhf* b) {
+	bool max_side(rect_xywh* a, rect_xywh* b) {
 		return std::max(a->w, a->h) > std::max(b->w, b->h);
 	}
 
-	bool max_width(rect_xywhf* a, rect_xywhf* b) {
+	bool max_width(rect_xywh* a, rect_xywh* b) {
 		return a->w > b->w;
 	}
 
-	bool max_height(rect_xywhf* a, rect_xywhf* b) {
+	bool max_height(rect_xywh* a, rect_xywh* b) {
 		return a->h > b->h;
 	}
 
@@ -32,7 +32,7 @@ namespace wiRectPacker
 	// just add another comparing function name to cmpf to perform another packing attempt
 	// more functions == slower but probably more efficient cases covered and hence less area wasted
 
-	bool(*cmpf[])(rect_xywhf*, rect_xywhf*) = {
+	bool(*cmpf[])(rect_xywh*, rect_xywh*) = {
 		area,
 		perimeter,
 		max_side,
@@ -89,7 +89,7 @@ namespace wiRectPacker
 			delcheck();
 		}
 
-		node* insert(rect_xywhf& img) {
+		node* insert(rect_xywh& img) {
 			if (c[0].pn && c[0].fill) {
 				node* newn;
 				if (newn = c[0].pn->insert(img)) return newn;
@@ -101,13 +101,11 @@ namespace wiRectPacker
 
 			switch (f) {
 			case 0: return 0;
-			case 1: img.flipped = false; break;
-			case 2: img.flipped = true; break;
-			case 3: id = true; img.flipped = false; return this;
-			case 4: id = true; img.flipped = true;  return this;
+			case 1: break;
+			case 2: id = true; return this;
 			}
 
-			int iw = (img.flipped ? img.h : img.w), ih = (img.flipped ? img.w : img.h);
+			int iw = img.w, ih = img.h;
 
 			if (rc.w() - iw > rc.h() - ih) {
 				c[0].set(rc.l, rc.t, rc.l + iw, rc.b);
@@ -132,16 +130,16 @@ namespace wiRectPacker
 		}
 	};
 
-	rect_wh _rect2D(rect_xywhf* const * v, int n, int max_s, std::vector<rect_xywhf*>& succ, std::vector<rect_xywhf*>& unsucc) {
+	rect_wh _rect2D(rect_xywh* const * v, int n, int max_s, std::vector<rect_xywh*>& succ, std::vector<rect_xywh*>& unsucc) {
 		node root;
 
-		const int funcs = (sizeof(cmpf) / sizeof(bool(*)(rect_xywhf*, rect_xywhf*)));
+		const int funcs = (sizeof(cmpf) / sizeof(bool(*)(rect_xywh*, rect_xywh*)));
 
-		rect_xywhf** order[funcs];
+		rect_xywh** order[funcs];
 
 		for (int f = 0; f < funcs; ++f) {
-			order[f] = new rect_xywhf*[n];
-			memcpy(order[f], v, sizeof(rect_xywhf*) * n);
+			order[f] = new rect_xywh*[n];
+			memcpy(order[f], v, sizeof(rect_xywh*) * n);
 			sort(order[f], order[f] + n, cmpf[f]);
 		}
 
@@ -211,11 +209,6 @@ namespace wiRectPacker
 				v[i]->x = ret->rc.l;
 				v[i]->y = ret->rc.t;
 
-				if (v[i]->flipped) {
-					v[i]->flipped = false;
-					v[i]->flip();
-				}
-
 				clip_x = std::max(clip_x, ret->rc.r);
 				clip_y = std::max(clip_y, ret->rc.b);
 
@@ -223,8 +216,6 @@ namespace wiRectPacker
 			}
 			else {
 				unsucc.push_back(v[i]);
-
-				v[i]->flipped = false;
 			}
 		}
 
@@ -235,16 +226,16 @@ namespace wiRectPacker
 	}
 
 
-	bool pack(rect_xywhf* const * v, int n, int max_s, std::vector<bin>& bins) {
+	bool pack(rect_xywh* const * v, int n, int max_s, std::vector<bin>& bins) {
 		rect_wh _rect(max_s, max_s);
 
 		for (int i = 0; i < n; ++i)
 			if (!v[i]->fits(_rect)) return false;
 
-		std::vector<rect_xywhf*> vec[2], *p[2] = { vec, vec + 1 };
+		std::vector<rect_xywh*> vec[2], *p[2] = { vec, vec + 1 };
 		vec[0].resize(n);
 		vec[1].clear();
-		memcpy(&vec[0][0], v, sizeof(rect_xywhf*)*n);
+		memcpy(&vec[0][0], v, sizeof(rect_xywh*)*n);
 
 		bin* b = 0;
 
@@ -270,10 +261,8 @@ namespace wiRectPacker
 	rect_wh::rect_wh(int w, int h) : w(w), h(h) {}
 
 	int rect_wh::fits(const rect_wh& r) const {
-		if (w == r.w && h == r.h) return 3;
-		if (h == r.w && w == r.h) return 4;
+		if (w == r.w && h == r.h) return 2;
 		if (w <= r.w && h <= r.h) return 1;
-		if (h <= r.w && w <= r.h) return 2;
 		return 0;
 	}
 
@@ -336,16 +325,6 @@ namespace wiRectPacker
 
 	int rect_wh::perimeter() {
 		return 2 * w + 2 * h;
-	}
-
-
-	rect_xywhf::rect_xywhf(const rect_ltrb& rr) : rect_xywh(rr), flipped(false) {}
-	rect_xywhf::rect_xywhf(int x, int y, int width, int height) : rect_xywh(x, y, width, height), flipped(false) {}
-	rect_xywhf::rect_xywhf() : flipped(false) {}
-
-	void rect_xywhf::flip() {
-		flipped = !flipped;
-		std::swap(w, h);
 	}
 
 }

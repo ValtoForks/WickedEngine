@@ -1,73 +1,55 @@
 #include "MainComponent.h"
-#include "RenderableComponent.h"
+#include "RenderPath.h"
 #include "wiRenderer.h"
 #include "wiHelper.h"
 #include "wiTimer.h"
-#include "wiCpuInfo.h"
 #include "wiInputManager.h"
 #include "wiBackLog.h"
 #include "MainComponent_BindLua.h"
 #include "wiVersion.h"
-#include "wiImageEffects.h"
+#include "wiEnums.h"
 #include "wiTextureHelper.h"
-#include "wiFrameRate.h"
 #include "wiProfiler.h"
 #include "wiInitializer.h"
 #include "wiStartupArguments.h"
+#include "wiFont.h"
+#include "wiImage.h"
 
 #include "wiGraphicsDevice_DX11.h"
 #include "wiGraphicsDevice_DX12.h"
 #include "wiGraphicsDevice_Vulkan.h"
 
+#include <sstream>
 
 using namespace std;
 using namespace wiGraphicsTypes;
 
-MainComponent::MainComponent()
-{
-	// This call also saves the current working dir as the original one on this first call
-	wiHelper::GetOriginalWorkingDirectory();
-
-	screenW = 0;
-	screenH = 0;
-	fullscreen = false;
-
-	activeComponent = new RenderableComponent();
-
-	setFrameSkip(true);
-	setTargetFrameRate(60);
-	setApplicationControlLostThreshold(10);
-
-	infoDisplay = InfoDisplayer();
-
-	fadeManager.Clear();
-}
-
-
 MainComponent::~MainComponent()
 {
+	// This usually means appllication is terminating. Wait for GPU to finish rendering.
 	wiRenderer::GetDevice()->WaitForGPU();
-
-	if (activeComponent != nullptr)
-	{
-		activeComponent->Unload();
-	}
 }
 
 void MainComponent::Initialize()
 {
+	if (initialized)
+	{
+		return;
+	}
+	initialized = true;
 
 	// User can also create a graphics device if custom logic is desired, but he must do before this function!
-	if (wiRenderer::graphicsDevice == nullptr)
+	if (wiRenderer::GetDevice() == nullptr)
 	{
+		auto window = wiWindowRegistration::GetRegisteredWindow();
 
 		bool debugdevice = wiStartupArguments::HasArgument("debugdevice");
 
 		if (wiStartupArguments::HasArgument("vulkan"))
 		{
 #ifdef WICKEDENGINE_BUILD_VULKAN
-			wiRenderer::SHADERPATH += "spirv/";
-			wiRenderer::graphicsDevice = new GraphicsDevice_Vulkan(window, fullscreen, debugdevice);
+			wiRenderer::GetShaderPath() += "spirv/";
+			wiRenderer::SetDevice(new GraphicsDevice_Vulkan(window, fullscreen, debugdevice));
 #else
 			wiHelper::messageBox("Vulkan SDK not found during building the application! Vulkan API disabled!", "Error");
 #endif
@@ -76,101 +58,137 @@ void MainComponent::Initialize()
 		{
 			if (wiStartupArguments::HasArgument("hlsl6"))
 			{
-				wiRenderer::SHADERPATH += "hlsl6/";
+				wiRenderer::GetShaderPath() += "hlsl6/";
 			}
-			wiRenderer::graphicsDevice = new GraphicsDevice_DX12(window, fullscreen, debugdevice);
+			wiRenderer::SetDevice(new GraphicsDevice_DX12(window, fullscreen, debugdevice));
 		}
-		else
+
+		// default graphics device:
+		if (wiRenderer::GetDevice() == nullptr)
 		{
-			wiRenderer::graphicsDevice = new GraphicsDevice_DX11(window, fullscreen, debugdevice);
+			wiRenderer::SetDevice(new GraphicsDevice_DX11(window, fullscreen, debugdevice));
 		}
 
 	}
 
 
-	wiInitializer::InitializeComponents();
+	wiInitializer::InitializeComponentsAsync();
 
 	wiLua::GetGlobal()->RegisterObject(MainComponent_BindLua::className, "main", new MainComponent_BindLua(this));
 }
 
-void MainComponent::activateComponent(RenderableComponent* component, int fadeFrames, const wiColor& fadeColor)
+void MainComponent::ActivatePath(RenderPath* component, float fadeSeconds, const wiColor& fadeColor)
 {
 	if (component == nullptr)
 	{
 		return;
 	}
 
-	if (fadeFrames > 0)
-	{
-		// Fade
-		fadeManager.Clear();
-		fadeManager.Start(fadeFrames, fadeColor, [this,component]() {
-			if (component == nullptr)
-				return;
-			activeComponent->Stop();
-			component->Start();
-			activeComponent = component;
-		});
-	}
-	else
-	{
-		// No fade
-		fadeManager.Clear();
+	// Fade manager will activate on fadeout
+	fadeManager.Clear();
+	fadeManager.Start(fadeSeconds, fadeColor, [this,component]() {
 
-		activeComponent->Stop();
+		if (component == nullptr)
+		{
+			return;
+		}
+
+		if (activePath != nullptr)
+		{
+			activePath->Stop();
+		}
+
 		component->Start();
-		activeComponent = component;
-	}
+		activePath = component;
+	});
 }
 
 void MainComponent::Run()
 {
-	wiProfiler::GetInstance().BeginFrame();
-	wiProfiler::GetInstance().BeginRange("CPU Frame", wiProfiler::DOMAIN_CPU);
+	if (!initialized)
+	{
+		// Initialize in a lazy way, so the user application doesn't have to call this explicitly
+		Initialize();
+		initialized = true;
+	}
+	if (!wiInitializer::IsInitializeFinished())
+	{
+		// Until engine is not loaded, present initialization screen...
+		wiRenderer::GetDevice()->PresentBegin();
+		wiFont::BindPersistentState(GRAPHICSTHREAD_IMMEDIATE);
+		wiFont(wiBackLog::getText(), wiFontParams(4, 4, infoDisplay.size)).Draw(GRAPHICSTHREAD_IMMEDIATE);
+		wiRenderer::GetDevice()->PresentEnd();
+		return;
+	}
 
-	static wiTimer timer = wiTimer();
-	static double accumulator = 0.0;
-	const double elapsedTime = max(0, timer.elapsed() / 1000.0);
+	wiProfiler::BeginFrame();
+	wiProfiler::BeginRange("CPU Frame", wiProfiler::DOMAIN_CPU);
+
+	wiInputManager::Update();
+
+	deltaTime = float(max(0, timer.elapsed() / 1000.0));
 	timer.record();
 
-	// Fixed time update:
-	wiProfiler::GetInstance().BeginRange("Fixed Update", wiProfiler::DOMAIN_CPU);
-	if (frameskip)
+	if (wiWindowRegistration::IsWindowActive())
 	{
-		accumulator += elapsedTime;
-		if (!wiWindowRegistration::GetInstance()->IsWindowActive() || accumulator > applicationControlLostThreshold) //application probably lost control
-			accumulator = 0;
+		// If the application is active, run Update loops:
 
-		while (accumulator >= targetFrameRateInv)
+		fadeManager.Update(deltaTime);
+
+		// Fixed time update:
+		wiProfiler::BeginRange("Fixed Update", wiProfiler::DOMAIN_CPU);
 		{
-			FixedUpdate();
-			accumulator -= targetFrameRateInv;
+			if (frameskip)
+			{
+				deltaTimeAccumulator += deltaTime;
+				if (deltaTimeAccumulator > 10)
+				{
+					// application probably lost control, fixed update would be take long
+					deltaTimeAccumulator = 0;
+				}
+
+				const float targetFrameRateInv = 1.0f / targetFrameRate;
+				while (deltaTimeAccumulator >= targetFrameRateInv)
+				{
+					FixedUpdate();
+					deltaTimeAccumulator -= targetFrameRateInv;
+				}
+			}
+			else
+			{
+				FixedUpdate();
+			}
 		}
+		wiProfiler::EndRange(); // Fixed Update
+
+		wiLua::GetGlobal()->SetDeltaTime(double(deltaTime));
+
+		// Variable-timed update:
+		wiProfiler::BeginRange("Update", wiProfiler::DOMAIN_CPU);
+		Update(deltaTime);
+		wiProfiler::EndRange(); // Update
 	}
 	else
 	{
-		FixedUpdate();
+		// If the application is not active, disable Update loops:
+		deltaTimeAccumulator = 0;
+		wiLua::GetGlobal()->SetDeltaTime(0);
 	}
-	wiProfiler::GetInstance().EndRange(); // Fixed Update
 
-	wiProfiler::GetInstance().BeginRange("Physics", wiProfiler::DOMAIN_CPU);
-	wiRenderer::SynchronizeWithPhysicsEngine((float)elapsedTime);
-	wiProfiler::GetInstance().EndRange(); // Physics
-
-	wiLua::GetGlobal()->SetDeltaTime(elapsedTime);
-
-	// Variable-timed update:
-	wiProfiler::GetInstance().BeginRange("Update", wiProfiler::DOMAIN_CPU);
-	Update((float)elapsedTime);
-	wiProfiler::GetInstance().EndRange(); // Update
-
-	wiProfiler::GetInstance().BeginRange("Render", wiProfiler::DOMAIN_CPU);
+	wiProfiler::BeginRange("Render", wiProfiler::DOMAIN_CPU);
 	Render();
-	wiProfiler::GetInstance().EndRange(); // Render
+	wiProfiler::EndRange(); // Render
 
-	wiProfiler::GetInstance().EndRange(); // CPU Frame
+	wiProfiler::EndRange(); // CPU Frame
 
-	wiRenderer::Present(bind(&MainComponent::Compose, this));
+
+	wiProfiler::BeginRange("Compose", wiProfiler::DOMAIN_CPU);
+	wiRenderer::GetDevice()->PresentBegin();
+	Compose();
+	wiRenderer::GetDevice()->PresentEnd();
+	wiProfiler::EndRange(); // Compose
+
+	wiRenderer::EndFrame();
 
 	static bool startupScriptProcessed = false;
 	if (!startupScriptProcessed) {
@@ -178,13 +196,15 @@ void MainComponent::Run()
 		startupScriptProcessed = true;
 	}
 
-	wiProfiler::GetInstance().EndFrame();
+	wiProfiler::EndFrame();
 }
 
 void MainComponent::Update(float dt)
 {
-	wiCpuInfo::Frame();
-	getActiveComponent()->Update(dt);
+	if (GetActivePath() != nullptr)
+	{
+		GetActivePath()->Update(dt);
+	}
 
 	wiLua::GetGlobal()->Update();
 }
@@ -194,34 +214,42 @@ void MainComponent::FixedUpdate()
 	wiBackLog::Update();
 	wiLua::GetGlobal()->FixedUpdate();
 
-	getActiveComponent()->FixedUpdate();
-
-	fadeManager.Update();
+	if (GetActivePath() != nullptr)
+	{
+		GetActivePath()->FixedUpdate();
+	}
 }
 
 void MainComponent::Render()
 {
 	wiLua::GetGlobal()->Render();
 
-	wiProfiler::GetInstance().BeginRange("GPU Frame", wiProfiler::DOMAIN_GPU, GRAPHICSTHREAD_IMMEDIATE);
+	wiProfiler::BeginRange("GPU Frame", wiProfiler::DOMAIN_GPU, GRAPHICSTHREAD_IMMEDIATE);
 	wiRenderer::BindPersistentState(GRAPHICSTHREAD_IMMEDIATE);
 	wiImage::BindPersistentState(GRAPHICSTHREAD_IMMEDIATE);
-	getActiveComponent()->Render();
-	wiProfiler::GetInstance().EndRange(GRAPHICSTHREAD_IMMEDIATE); // GPU Frame
+	wiFont::BindPersistentState(GRAPHICSTHREAD_IMMEDIATE);
+	if (GetActivePath() != nullptr)
+	{
+		GetActivePath()->Render();
+	}
+	wiProfiler::EndRange(GRAPHICSTHREAD_IMMEDIATE); // GPU Frame
 }
 
 void MainComponent::Compose()
 {
-	getActiveComponent()->Compose();
+	if (GetActivePath() != nullptr)
+	{
+		GetActivePath()->Compose();
+	}
 
 	if (fadeManager.IsActive())
 	{
 		// display fade rect
-		static wiImageEffects fx;
+		static wiImageParams fx;
 		fx.siz.x = (float)wiRenderer::GetDevice()->GetScreenWidth();
 		fx.siz.y = (float)wiRenderer::GetDevice()->GetScreenHeight();
 		fx.opacity = fadeManager.opacity;
-		wiImage::Draw(wiTextureHelper::getInstance()->getColor(fadeManager.color), fx, GRAPHICSTHREAD_IMMEDIATE);
+		wiImage::Draw(wiTextureHelper::getColor(fadeManager.color), fx, GRAPHICSTHREAD_IMMEDIATE);
 	}
 
 	// Draw the information display
@@ -259,27 +287,13 @@ void MainComponent::Compose()
 		if (infoDisplay.fpsinfo)
 		{
 			ss.precision(2);
-			ss << fixed << wiFrameRate::FPS() << " FPS" << endl;
-		}
-		if (infoDisplay.cpuinfo)
-		{
-			int cpupercentage = wiCpuInfo::GetCpuPercentage();
-			ss << "CPU: ";
-			if (cpupercentage >= 0)
-			{
-				ss << cpupercentage << "%";
-			}
-			else
-			{
-				ss << "Query failed";
-			}
-			ss << endl;
+			ss << fixed << 1.0f / deltaTime << " FPS" << endl;
 		}
 		ss.precision(2);
-		wiFont(ss.str(), wiFontProps(4, 4, infoDisplay.size, WIFALIGN_LEFT, WIFALIGN_TOP, 2, 1, wiColor(255,255,255,255), wiColor(0,0,0,255))).Draw(GRAPHICSTHREAD_IMMEDIATE);
+		wiFont(ss.str(), wiFontParams(4, 4, infoDisplay.size, WIFALIGN_LEFT, WIFALIGN_TOP, 0, 0, wiColor(255,255,255,255), wiColor(0,0,0,255))).Draw(GRAPHICSTHREAD_IMMEDIATE);
 	}
 
-	wiProfiler::GetInstance().DrawData(4, 120, GRAPHICSTHREAD_IMMEDIATE);
+	wiProfiler::DrawData(4, 120, GRAPHICSTHREAD_IMMEDIATE);
 
 	wiBackLog::Draw();
 }
@@ -287,30 +301,16 @@ void MainComponent::Compose()
 #ifndef WINSTORE_SUPPORT
 bool MainComponent::SetWindow(wiWindowRegistration::window_type window, HINSTANCE hInst)
 {
-	this->window = window;
-	this->instance = hInst;
+	this->hInst = hInst;
 
-	if (screenW == 0 || screenH == 0)
-	{
-		RECT rect = RECT();
-		GetClientRect(window, &rect);
-		screenW = rect.right - rect.left;
-		screenH = rect.bottom - rect.top;
-	}
-
-	wiWindowRegistration::GetInstance()->RegisterWindow(window);
+	wiWindowRegistration::RegisterWindow(window);
 
 	return true;
 }
 #else
 bool MainComponent::SetWindow(wiWindowRegistration::window_type window)
 {
-	screenW = (int)window->Bounds.Width;
-	screenH = (int)window->Bounds.Height;
-
-	this->window = window;
-
-	wiWindowRegistration::GetInstance()->RegisterWindow(window);
+	wiWindowRegistration::RegisterWindow(window);
 
 	return true;
 }

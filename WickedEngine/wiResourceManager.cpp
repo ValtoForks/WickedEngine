@@ -10,39 +10,23 @@
 using namespace std;
 using namespace wiGraphicsTypes;
 
-static const std::map<std::string, wiResourceManager::Data_Type> types = {
-	std::pair<string, wiResourceManager::Data_Type>("JPG", wiResourceManager::IMAGE),
-	std::pair<string, wiResourceManager::Data_Type>("PNG", wiResourceManager::IMAGE),
-	std::pair<string, wiResourceManager::Data_Type>("DDS", wiResourceManager::IMAGE),
-	std::pair<string, wiResourceManager::Data_Type>("TGA", wiResourceManager::IMAGE),
-	std::pair<string, wiResourceManager::Data_Type>("WAV", wiResourceManager::SOUND)
+static const std::unordered_map<std::string, wiResourceManager::Data_Type> types = {
+	make_pair("JPG", wiResourceManager::IMAGE),
+	make_pair("PNG", wiResourceManager::IMAGE),
+	make_pair("DDS", wiResourceManager::IMAGE),
+	make_pair("TGA", wiResourceManager::IMAGE),
+	make_pair("WAV", wiResourceManager::SOUND)
 };
 
-wiResourceManager* wiResourceManager::globalResources = nullptr;
 
-wiResourceManager::wiResourceManager():wiThreadSafeManager()
+wiResourceManager& wiResourceManager::GetGlobal()
 {
-}
-wiResourceManager::~wiResourceManager()
-{
-	CleanUp();
-}
-wiResourceManager* wiResourceManager::GetGlobal()
-{
-	if (globalResources == nullptr)
-	{
-		LOCK_STATIC();
-		if (globalResources == nullptr)
-		{
-			globalResources = new wiResourceManager();
-		}
-		UNLOCK_STATIC();
-	}
+	static wiResourceManager globalResources;
 	return globalResources;
 }
-wiResourceManager* wiResourceManager::GetShaderManager()
+wiResourceManager& wiResourceManager::GetShaderManager()
 {
-	static wiResourceManager* shaderManager = new wiResourceManager;
+	static wiResourceManager shaderManager;
 	return shaderManager;
 }
 
@@ -188,7 +172,9 @@ void* wiResourceManager::add(const wiHashString& name, Data_Type newType)
 						}
 					}
 
-					wiRenderer::GetDevice()->CreateTexture2D(&desc, InitData.data(), &image);
+					HRESULT hr = wiRenderer::GetDevice()->CreateTexture2D(&desc, InitData.data(), &image);
+					assert(SUCCEEDED(hr));
+					wiRenderer::GetDevice()->SetName(image, nameStr);
 
 				}
 
@@ -228,8 +214,9 @@ void* wiResourceManager::add(const wiHashString& name, Data_Type newType)
 					image->RequestIndependentUnorderedAccessResourcesForMIPs(true);
 					HRESULT hr = wiRenderer::GetDevice()->CreateTexture2D(&desc, InitData, &image);
 					assert(SUCCEEDED(hr));
+					wiRenderer::GetDevice()->SetName(image, nameStr);
 
-					if (image != nullptr)
+					if (image != nullptr && image->GetDesc().MipLevels > 1)
 					{
 						wiRenderer::AddDeferredMIPGen(image);
 					}
@@ -253,12 +240,10 @@ void* wiResourceManager::add(const wiHashString& name, Data_Type newType)
 		break;
 		case Data_Type::VERTEXSHADER:
 		{
-			BYTE* buffer;
-			size_t bufferSize;
-			if (wiHelper::readByteData(nameStr, &buffer, bufferSize)) {
+			vector<uint8_t> buffer;
+			if (wiHelper::readByteData(nameStr, buffer)) {
 				VertexShader* shader = new VertexShader;
-				wiRenderer::GetDevice()->CreateVertexShader(buffer, bufferSize, shader);
-				delete[] buffer;
+				wiRenderer::GetDevice()->CreateVertexShader(buffer.data(), buffer.size(), shader);
 				success = shader;
 			}
 			else{
@@ -268,12 +253,10 @@ void* wiResourceManager::add(const wiHashString& name, Data_Type newType)
 		break;
 		case Data_Type::PIXELSHADER:
 		{
-			BYTE* buffer;
-			size_t bufferSize;
-			if (wiHelper::readByteData(nameStr, &buffer, bufferSize)){
+			vector<uint8_t> buffer;
+			if (wiHelper::readByteData(nameStr, buffer)){
 				PixelShader* shader = new PixelShader;
-				wiRenderer::GetDevice()->CreatePixelShader(buffer, bufferSize, shader);
-				delete[] buffer;
+				wiRenderer::GetDevice()->CreatePixelShader(buffer.data(), buffer.size(), shader);
 				success = shader;
 			}
 			else{
@@ -283,12 +266,10 @@ void* wiResourceManager::add(const wiHashString& name, Data_Type newType)
 		break;
 		case Data_Type::GEOMETRYSHADER:
 		{
-			BYTE* buffer;
-			size_t bufferSize;
-			if (wiHelper::readByteData(nameStr, &buffer, bufferSize)){
+			vector<uint8_t> buffer;
+			if (wiHelper::readByteData(nameStr, buffer)){
 				GeometryShader* shader = new GeometryShader;
-				wiRenderer::GetDevice()->CreateGeometryShader(buffer, bufferSize, shader);
-				delete[] buffer;
+				wiRenderer::GetDevice()->CreateGeometryShader(buffer.data(), buffer.size(), shader);
 				success = shader;
 			}
 			else{
@@ -298,12 +279,10 @@ void* wiResourceManager::add(const wiHashString& name, Data_Type newType)
 		break;
 		case Data_Type::HULLSHADER:
 		{
-			BYTE* buffer;
-			size_t bufferSize;
-			if (wiHelper::readByteData(nameStr, &buffer, bufferSize)){
+			vector<uint8_t> buffer;
+			if (wiHelper::readByteData(nameStr, buffer)){
 				HullShader* shader = new HullShader;
-				wiRenderer::GetDevice()->CreateHullShader(buffer, bufferSize, shader);
-				delete[] buffer;
+				wiRenderer::GetDevice()->CreateHullShader(buffer.data(), buffer.size(), shader);
 				success = shader;
 			}
 			else{
@@ -313,12 +292,10 @@ void* wiResourceManager::add(const wiHashString& name, Data_Type newType)
 		break;
 		case Data_Type::DOMAINSHADER:
 		{
-			BYTE* buffer;
-			size_t bufferSize;
-			if (wiHelper::readByteData(nameStr, &buffer, bufferSize)){
+			vector<uint8_t> buffer;
+			if (wiHelper::readByteData(nameStr, buffer)){
 				DomainShader* shader = new DomainShader;
-				wiRenderer::GetDevice()->CreateDomainShader(buffer, bufferSize, shader);
-				delete[] buffer;
+				wiRenderer::GetDevice()->CreateDomainShader(buffer.data(), buffer.size(), shader);
 				success = shader;
 			}
 			else{
@@ -328,12 +305,10 @@ void* wiResourceManager::add(const wiHashString& name, Data_Type newType)
 		break;
 		case Data_Type::COMPUTESHADER:
 		{
-			BYTE* buffer;
-			size_t bufferSize;
-			if (wiHelper::readByteData(nameStr, &buffer, bufferSize)) {
+			vector<uint8_t> buffer;
+			if (wiHelper::readByteData(nameStr, buffer)) {
 				ComputeShader* shader = new ComputeShader;
-				wiRenderer::GetDevice()->CreateComputeShader(buffer, bufferSize, shader);
-				delete[] buffer;
+				wiRenderer::GetDevice()->CreateComputeShader(buffer.data(), buffer.size(), shader);
 				success = shader;
 			}
 			else {
@@ -438,11 +413,12 @@ bool wiResourceManager::Register(const wiHashString& name, void* resource, Data_
 	return false;
 }
 
-bool wiResourceManager::CleanUp()
+bool wiResourceManager::Clear()
 {
 	wiRenderer::GetDevice()->WaitForGPU();
 
-	std::vector<wiHashString>resNames(0);
+	std::vector<wiHashString> resNames;
+	resNames.reserve(resources.size());
 	for (auto& x : resources)
 	{
 		resNames.push_back(x.first);

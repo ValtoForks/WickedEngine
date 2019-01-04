@@ -13,26 +13,26 @@ namespace wiGraphicsTypes
 	class GraphicsDevice
 	{
 	protected:
-		uint64_t FRAMECOUNT;
-		bool VSYNC;
-		int SCREENWIDTH, SCREENHEIGHT;
-		bool FULLSCREEN;
-		bool RESOLUTIONCHANGED;
-		FORMAT BACKBUFFER_FORMAT;
+		uint64_t FRAMECOUNT = 0;
+		bool VSYNC = true;
+		int SCREENWIDTH = 0;
+		int SCREENHEIGHT = 0;
+		bool FULLSCREEN = false;
+		bool RESOLUTIONCHANGED = false;
+		FORMAT BACKBUFFER_FORMAT = FORMAT_R10G10B10A2_UNORM;
 		static const UINT BACKBUFFER_COUNT = 2;
-		bool TESSELLATION, MULTITHREADED_RENDERING, CONSERVATIVE_RASTERIZATION, RASTERIZER_ORDERED_VIEWS, UNORDEREDACCESSTEXTURE_LOAD_EXT;
+		bool TESSELLATION = false;
+		bool MULTITHREADED_RENDERING = false;
+		bool CONSERVATIVE_RASTERIZATION = false;
+		bool RASTERIZER_ORDERED_VIEWS = false;
+		bool UNORDEREDACCESSTEXTURE_LOAD_EXT = false;
 	public:
-		GraphicsDevice() 
-			:FRAMECOUNT(0), VSYNC(true), SCREENWIDTH(0), SCREENHEIGHT(0), FULLSCREEN(false), RESOLUTIONCHANGED(false), BACKBUFFER_FORMAT(FORMAT_R10G10B10A2_UNORM),
-			TESSELLATION(false), MULTITHREADED_RENDERING(false), CONSERVATIVE_RASTERIZATION(false),RASTERIZER_ORDERED_VIEWS(false), UNORDEREDACCESSTEXTURE_LOAD_EXT(false)
-		{}
 
 		virtual HRESULT CreateBuffer(const GPUBufferDesc *pDesc, const SubresourceData* pInitialData, GPUBuffer *ppBuffer) = 0;
 		virtual HRESULT CreateTexture1D(const TextureDesc* pDesc, const SubresourceData *pInitialData, Texture1D **ppTexture1D) = 0;
 		virtual HRESULT CreateTexture2D(const TextureDesc* pDesc, const SubresourceData *pInitialData, Texture2D **ppTexture2D) = 0;
 		virtual HRESULT CreateTexture3D(const TextureDesc* pDesc, const SubresourceData *pInitialData, Texture3D **ppTexture3D) = 0;
-		virtual HRESULT CreateInputLayout(const VertexLayoutDesc *pInputElementDescs, UINT NumElements,
-			const void *pShaderBytecodeWithInputSignature, SIZE_T BytecodeLength, VertexLayout *pInputLayout) = 0;
+		virtual HRESULT CreateInputLayout(const VertexLayoutDesc *pInputElementDescs, UINT NumElements, const ShaderByteCode* shaderCode, VertexLayout *pInputLayout) = 0;
 		virtual HRESULT CreateVertexShader(const void *pShaderBytecode, SIZE_T BytecodeLength, VertexShader *pVertexShader) = 0;
 		virtual HRESULT CreatePixelShader(const void *pShaderBytecode, SIZE_T BytecodeLength, PixelShader *pPixelShader) = 0;
 		virtual HRESULT CreateGeometryShader(const void *pShaderBytecode, SIZE_T BytecodeLength, GeometryShader *pGeometryShader) = 0;
@@ -73,16 +73,19 @@ namespace wiGraphicsTypes
 		virtual void PresentBegin() = 0;
 		virtual void PresentEnd() = 0;
 
-		virtual void ExecuteDeferredContexts() = 0;
+		virtual void CreateCommandLists() = 0;
+		virtual void ExecuteCommandLists() = 0;
 		virtual void FinishCommandList(GRAPHICSTHREAD thread) = 0;
 
-		bool GetVSyncEnabled() { return VSYNC; }
-		void SetVSyncEnabled(bool value) { VSYNC = value; }
-		uint64_t GetFrameCount() { return FRAMECOUNT; }
+		virtual void WaitForGPU() = 0;
 
-		int GetScreenWidth() { return SCREENWIDTH; }
-		int GetScreenHeight() { return SCREENHEIGHT; }
-		bool ResolutionChanged() { return RESOLUTIONCHANGED; }
+		inline bool GetVSyncEnabled() const { return VSYNC; }
+		inline void SetVSyncEnabled(bool value) { VSYNC = value; }
+		inline uint64_t GetFrameCount() const { return FRAMECOUNT; }
+
+		inline int GetScreenWidth() const { return SCREENWIDTH; }
+		inline int GetScreenHeight() const { return SCREENHEIGHT; }
+		inline bool ResolutionChanged() const { return RESOLUTIONCHANGED; }
 
 
 		virtual void SetResolution(int width, int height) = 0;
@@ -98,16 +101,17 @@ namespace wiGraphicsTypes
 			GRAPHICSDEVICE_CAPABILITY_UNORDEREDACCESSTEXTURE_LOAD_FORMAT_EXT,
 			GRAPHICSDEVICE_CAPABILITY_COUNT,
 		};
-		bool CheckCapability(GRAPHICSDEVICE_CAPABILITY capability);
+		bool CheckCapability(GRAPHICSDEVICE_CAPABILITY capability) const;
 
-		uint32_t GetFormatStride(FORMAT value);
+		uint32_t GetFormatStride(FORMAT value) const;
+		bool IsFormatUnorm(FORMAT value) const;
 
-		XMMATRIX GetScreenProjection()
+		inline XMMATRIX GetScreenProjection() const
 		{
 			return XMMatrixOrthographicOffCenterLH(0, (float)GetScreenWidth(), (float)GetScreenHeight(), 0, -1, 1);
 		}
-		FORMAT GetBackBufferFormat() { return BACKBUFFER_FORMAT; }
-		static UINT GetBackBufferCount() { return BACKBUFFER_COUNT; }
+		inline FORMAT GetBackBufferFormat() const { return BACKBUFFER_FORMAT; }
+		inline static UINT GetBackBufferCount() { return BACKBUFFER_COUNT; }
 
 
 		///////////////Thread-sensitive////////////////////////
@@ -151,9 +155,7 @@ namespace wiGraphicsTypes
 		virtual bool QueryRead(GPUQuery *query, GRAPHICSTHREAD threadID) = 0;
 		virtual void UAVBarrier(GPUResource *const* uavs, UINT NumBarriers, GRAPHICSTHREAD threadID) = 0;
 		virtual void TransitionBarrier(GPUResource *const* resources, UINT NumBarriers, RESOURCE_STATES stateBefore, RESOURCE_STATES stateAfter, GRAPHICSTHREAD threadID) = 0;
-
-		virtual void WaitForGPU() = 0;
-
+		
 		virtual void EventBegin(const std::string& name, GRAPHICSTHREAD threadID) = 0;
 		virtual void EventEnd(GRAPHICSTHREAD threadID) = 0;
 		virtual void SetMarker(const std::string& name, GRAPHICSTHREAD threadID) = 0;

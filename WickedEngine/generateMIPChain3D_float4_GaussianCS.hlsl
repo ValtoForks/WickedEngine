@@ -1,5 +1,5 @@
 #include "globals.hlsli"
-#include "generateMIPChainHF.hlsli"
+#include "ShaderInterop_Utility.h"
 
 #ifndef MIP_OUTPUT_FORMAT
 #define MIP_OUTPUT_FORMAT float4
@@ -12,8 +12,6 @@ RWTEXTURE3D(input_output, MIP_OUTPUT_FORMAT, 0);
 [numthreads(GENERATEMIPCHAIN_3D_BLOCK_SIZE, GENERATEMIPCHAIN_3D_BLOCK_SIZE, GENERATEMIPCHAIN_3D_BLOCK_SIZE)]
 void main(uint3 DTid : SV_DispatchThreadID)
 {
-#ifndef SHADERCOMPILER_SPIRV
-
 	// Determine if the thread is alive (it is alive when the dispatchthreadID can directly index a pixel)
 	if (DTid.x < outputResolution.x && DTid.y < outputResolution.y && DTid.z < outputResolution.z)
 	{
@@ -59,5 +57,4 @@ void main(uint3 DTid : SV_DispatchThreadID)
 		input_output[DTid] = sum;
 	}
 
-#endif
 }

@@ -1,47 +1,45 @@
 #include "wiInitializer.h"
-#include "wiRenderer.h"
-#include "wiImage.h"
-#include "wiLensFlare.h"
-#include "wiResourceManager.h"
-#include "wiFrameRate.h"
-#include "wiBackLog.h"
-#include "wiCpuInfo.h"
-#include "wiSound.h"
-#include "wiOcean.h"
-#include "wiHelper.h"
-#include "wiWidget.h"
-#include "wiGPUSortLib.h"
+#include "WickedEngine.h"
+
+#include <thread>
+#include <sstream>
 
 using namespace std;
 
 namespace wiInitializer
 {
+	bool initializationStarted = false;
 
-	void InitializeComponents()
+	void InitializeComponentsImmediate()
 	{
-		wiBackLog::Initialize();
-		wiFrameRate::Initialize();
-		wiCpuInfo::Initialize();
+		InitializeComponentsAsync();
+		wiJobSystem::Wait();
+	}
+	void InitializeComponentsAsync()
+	{
+		initializationStarted = true;
 
-		wiRenderer::SetUpStaticComponents();
-		wiLensFlare::Initialize();
+		wiBackLog::post("\n[wiInitializer] Initializing Wicked Engine, please wait...\n");
 
-		wiImage::Load();
+		wiJobSystem::Initialize();
 
-		wiFont::Initialize();
-		wiFont::SetUpStaticComponents();
+		wiJobSystem::Execute([] { wiFont::Initialize(); });
+		wiJobSystem::Execute([] { wiImage::Initialize(); });
+		wiJobSystem::Execute([] { wiRenderer::Initialize(); wiWidget::LoadShaders(); });
+		wiJobSystem::Execute([] { wiSoundEffect::Initialize(); wiMusic::Initialize(); });
+		wiJobSystem::Execute([] { wiTextureHelper::Initialize(); });
+		wiJobSystem::Execute([] { wiSceneSystem::wiHairParticle::Initialize(); });
+		wiJobSystem::Execute([] { wiSceneSystem::wiEmittedParticle::Initialize(); });
+		wiJobSystem::Execute([] { wiLensFlare::Initialize(); });
+		wiJobSystem::Execute([] { wiOcean::Initialize(); });
+		wiJobSystem::Execute([] { wiGPUSortLib::LoadShaders(); });
+		wiJobSystem::Execute([] { wiGPUBVH::LoadShaders(); });
+		wiJobSystem::Execute([] { wiPhysicsEngine::Initialize(); });
 
-		wiOcean::SetUpStatic();
+	}
 
-		wiWidget::LoadShaders();
-
-		wiGPUSortLib::LoadShaders();
-
-		if (FAILED(wiSoundEffect::Initialize()) || FAILED(wiMusic::Initialize()))
-		{
-			stringstream ss("");
-			ss << "Failed to Initialize Audio Device!";
-			wiHelper::messageBox(ss.str());
-		}
+	bool IsInitializeFinished()
+	{
+		return initializationStarted && !wiJobSystem::IsBusy();
 	}
 }

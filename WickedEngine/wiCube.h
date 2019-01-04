@@ -1,8 +1,8 @@
 #pragma once
 #include "CommonInclude.h"
-#include "wiGraphicsAPI.h"
+#include "wiGraphicsDevice.h"
 
-class Cube
+class wiCube
 {
 private:
 	struct Description{
@@ -22,20 +22,19 @@ private:
 				);
 		};
 	};
-	static void SetUpVertices();
 public:
-	Cube(const XMFLOAT3& center=XMFLOAT3(0,0,0), const XMFLOAT3& halfwidth=XMFLOAT3(1,1,1), const XMFLOAT4& color = XMFLOAT4(1,1,1,1));
+	wiCube(const XMFLOAT3& center=XMFLOAT3(0,0,0), const XMFLOAT3& halfwidth=XMFLOAT3(1,1,1), const XMFLOAT4& color = XMFLOAT4(1,1,1,1));
 
 	void Transform(const XMFLOAT4X4& mat);
 	void Transform(const XMMATRIX& mat);
 
 	Description desc;
 	
-	static wiGraphicsTypes::GPUBuffer vertexBuffer;
-	static wiGraphicsTypes::GPUBuffer indexBuffer;
-	static void LoadStatic();
-	static void CleanUpStatic();
+	static wiGraphicsTypes::GPUBuffer* GetVertexBuffer();
+	static wiGraphicsTypes::GPUBuffer* GetIndexBuffer();
 
-	ALIGN_16
+	static void Initialize();
+	static void CleanUp();
+
 };
 

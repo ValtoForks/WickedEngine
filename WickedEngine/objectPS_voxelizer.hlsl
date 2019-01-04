@@ -5,7 +5,7 @@ RWSTRUCTUREDBUFFER(output, VoxelType, 0);
 
 void main(float4 pos : SV_POSITION, float3 N : NORMAL, float2 tex : TEXCOORD, float3 P : POSITION3D, nointerpolation float3 instanceColor : COLOR)
 {
-	float3 diff = (P - g_xWorld_VoxelRadianceDataCenter) * g_xWorld_VoxelRadianceDataRes_Inverse * g_xWorld_VoxelRadianceDataSize_Inverse;
+	float3 diff = (P - g_xFrame_VoxelRadianceDataCenter) * g_xFrame_VoxelRadianceDataRes_Inverse * g_xFrame_VoxelRadianceDataSize_Inverse;
 	float3 uvw = diff * float3(0.5f, -0.5f, 0.5f) + 0.5f;
 
 	[branch]
@@ -25,9 +25,14 @@ void main(float4 pos : SV_POSITION, float3 N : NORMAL, float2 tex : TEXCOORD, fl
 		{
 			ShaderEntityType light = EntityArray[i];
 
+			if (light.GetFlags() & ENTITY_FLAG_LIGHT_STATIC)
+			{
+				continue; // static lights will be skipped (they are used in lightmap baking)
+			}
+
 			LightingResult result = (LightingResult)0;
 
-			switch (light.type)
+			switch (light.GetType())
 			{
 			case ENTITY_TYPE_DIRECTIONALLIGHT:
 			{
@@ -54,15 +59,17 @@ void main(float4 pos : SV_POSITION, float3 N : NORMAL, float2 tex : TEXCOORD, fl
 			case ENTITY_TYPE_POINTLIGHT:
 			{
 				float3 L = light.positionWS - P;
-				float dist = length(L);
+				const float dist2 = dot(L, L);
+				const float dist = sqrt(dist2);
 
 				[branch]
 				if (dist < light.range)
 				{
 					L /= dist;
 
-					float att = (light.energy * (light.range / (light.range + 1 + dist)));
-					float attenuation = (att * (light.range - dist) / light.range);
+					const float range2 = light.range * light.range;
+					const float att = saturate(1.0 - (dist2 / range2));
+					const float attenuation = att * att;
 
 					float3 lightColor = light.GetColor().rgb * light.energy * max(dot(N, L), 0) * attenuation;
 
@@ -78,21 +85,23 @@ void main(float4 pos : SV_POSITION, float3 N : NORMAL, float2 tex : TEXCOORD, fl
 			case ENTITY_TYPE_SPOTLIGHT:
 			{
 				float3 L = light.positionWS - P;
-				float dist = length(L);
+				const float dist2 = dot(L, L);
+				const float dist = sqrt(dist2);
 
 				[branch]
 				if (dist < light.range)
 				{
 					L /= dist;
 
-					float SpotFactor = dot(L, light.directionWS);
-					float spotCutOff = light.coneAngleCos;
+					const float SpotFactor = dot(L, light.directionWS);
+					const float spotCutOff = light.coneAngleCos;
 
 					[branch]
 					if (SpotFactor > spotCutOff)
 					{
-						float att = (light.energy * (light.range / (light.range + 1 + dist)));
-						float attenuation = (att * (light.range - dist) / light.range);
+						const float range2 = light.range * light.range;
+						const float att = saturate(1.0 - (dist2 / range2));
+						float attenuation = att * att;
 						attenuation *= saturate((1.0 - (1.0 - SpotFactor) * 1.0 / (1.0 - spotCutOff)));
 
 						float3 lightColor = light.GetColor().rgb * light.energy * max(dot(N, L), 0) * attenuation;
@@ -122,14 +131,14 @@ void main(float4 pos : SV_POSITION, float3 N : NORMAL, float2 tex : TEXCOORD, fl
 
 		color.rgb *= diffuse;
 		
-		color.rgb += baseColor.rgb * GetEmissive(emissive);
+		color.rgb += baseColor.rgb * emissive;
 
 		uint color_encoded = EncodeColor(color);
 		uint normal_encoded = EncodeNormal(N);
 
 		// output:
-		uint3 writecoord = floor(uvw * g_xWorld_VoxelRadianceDataRes);
-		uint id = flatten3D(writecoord, g_xWorld_VoxelRadianceDataRes);
+		uint3 writecoord = floor(uvw * g_xFrame_VoxelRadianceDataRes);
+		uint id = flatten3D(writecoord, g_xFrame_VoxelRadianceDataRes);
 		InterlockedMax(output[id].colorMask, color_encoded);
 		InterlockedMax(output[id].normalMask, normal_encoded);
 	}
