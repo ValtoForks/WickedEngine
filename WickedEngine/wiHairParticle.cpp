@@ -2,7 +2,7 @@
 #include "wiRenderer.h"
 #include "wiResourceManager.h"
 #include "wiMath.h"
-#include "wiFrustum.h"
+#include "wiIntersect.h"
 #include "wiRandom.h"
 #include "ResourceMapping.h"
 #include "wiArchive.h"
@@ -13,59 +13,80 @@
 #include "wiBackLog.h"
 
 using namespace std;
-using namespace wiGraphicsTypes;
+using namespace wiGraphics;
 
 namespace wiSceneSystem
 {
 
-static VertexShader *vs = nullptr;
-static PixelShader *ps[SHADERTYPE_COUNT] = {};
-static PixelShader *ps_simplest = nullptr;
-static ComputeShader *cs_simulate = nullptr;
+static const VertexShader *vs = nullptr;
+static const PixelShader *ps[RENDERPASS_COUNT] = {};
+static const PixelShader *ps_simplest = nullptr;
+static const ComputeShader *cs_simulate = nullptr;
 static DepthStencilState dss_default, dss_equal, dss_rejectopaque_keeptransparent;
 static RasterizerState rs, ncrs, wirers;
 static BlendState bs[2]; 
-static GraphicsPSO PSO[SHADERTYPE_COUNT][2];
+static GraphicsPSO PSO[RENDERPASS_COUNT][2];
 static GraphicsPSO PSO_wire;
 static ComputePSO CPSO_simulate;
 
-void wiHairParticle::UpdateRenderData(const MeshComponent& mesh, const MaterialComponent& material, GRAPHICSTHREAD threadID)
+void wiHairParticle::UpdateCPU(const TransformComponent& transform, const MeshComponent& mesh, float dt)
 {
-	if (strandCount == 0)
+	world = transform.world;
+
+	XMFLOAT3 _min = mesh.aabb.getMin();
+	XMFLOAT3 _max = mesh.aabb.getMax();
+
+	_max.x += length;
+	_max.y += length;
+	_max.z += length;
+
+	_min.x -= length;
+	_min.y -= length;
+	_min.z -= length;
+
+	aabb = AABB(_min, _max);
+	aabb = aabb.get(world);
+
+	if (dt > 0)
 	{
-		return;
+		_flags &= ~REGENERATE_FRAME;
+		if (cb == nullptr || (strandCount * segmentCount) != particleBuffer->GetDesc().ByteWidth / sizeof(Patch))
+		{
+			_flags |= REGENERATE_FRAME;
+
+			cb.reset(new GPUBuffer);
+			particleBuffer.reset(new GPUBuffer);
+			simulationBuffer.reset(new GPUBuffer);
+
+			GPUBufferDesc bd;
+			bd.Usage = USAGE_DEFAULT;
+			bd.BindFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
+			bd.CPUAccessFlags = 0;
+			bd.MiscFlags = RESOURCE_MISC_BUFFER_STRUCTURED;
+
+			bd.StructureByteStride = sizeof(Patch);
+			bd.ByteWidth = bd.StructureByteStride * strandCount * segmentCount;
+			wiRenderer::GetDevice()->CreateBuffer(&bd, nullptr, particleBuffer.get());
+
+			bd.StructureByteStride = sizeof(PatchSimulationData);
+			bd.ByteWidth = bd.StructureByteStride * strandCount * segmentCount;
+			wiRenderer::GetDevice()->CreateBuffer(&bd, nullptr, simulationBuffer.get());
+
+			bd.Usage = USAGE_DYNAMIC;
+			bd.ByteWidth = sizeof(HairParticleCB);
+			bd.BindFlags = BIND_CONSTANT_BUFFER;
+			bd.CPUAccessFlags = CPU_ACCESS_WRITE;
+			bd.MiscFlags = 0;
+			wiRenderer::GetDevice()->CreateBuffer(&bd, nullptr, cb.get());
+		}
 	}
 
-	bool regenerate = false;
-
-	if(cb == nullptr || (strandCount * segmentCount) != particleBuffer->GetDesc().ByteWidth / sizeof(Patch))
+}
+void wiHairParticle::UpdateGPU(const MeshComponent& mesh, const MaterialComponent& material, GRAPHICSTHREAD threadID) const
+{
+	if (strandCount == 0 || particleBuffer == nullptr)
 	{
-		regenerate = true;
-
-		cb.reset(new GPUBuffer);
-		particleBuffer.reset(new GPUBuffer);
-		simulationBuffer.reset(new GPUBuffer);
-
-		GPUBufferDesc bd;
-		bd.Usage = USAGE_DEFAULT;
-		bd.BindFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
-		bd.CPUAccessFlags = 0;
-		bd.MiscFlags = RESOURCE_MISC_BUFFER_STRUCTURED;
-
-		bd.StructureByteStride = sizeof(Patch);
-		bd.ByteWidth = bd.StructureByteStride * strandCount * segmentCount;
-		wiRenderer::GetDevice()->CreateBuffer(&bd, nullptr, particleBuffer.get());
-
-		bd.StructureByteStride = sizeof(PatchSimulationData);
-		bd.ByteWidth = bd.StructureByteStride * strandCount * segmentCount;
-		wiRenderer::GetDevice()->CreateBuffer(&bd, nullptr, simulationBuffer.get());
-
-		bd.Usage = USAGE_DYNAMIC;
-		bd.ByteWidth = sizeof(HairParticleCB);
-		bd.BindFlags = BIND_CONSTANT_BUFFER;
-		bd.CPUAccessFlags = CPU_ACCESS_WRITE;
-		bd.MiscFlags = 0;
-		wiRenderer::GetDevice()->CreateBuffer(&bd, nullptr, cb.get());
+		return;
 	}
 
 	GraphicsDevice* device = wiRenderer::GetDevice();
@@ -76,12 +97,12 @@ void wiHairParticle::UpdateRenderData(const MeshComponent& mesh, const MaterialC
 	HairParticleCB hcb;
 	hcb.xWorld = world;
 	hcb.xColor = material.baseColor;
-	hcb.xHairRegenerate = regenerate ? 1 : 0;
+	hcb.xHairRegenerate = (_flags & REGENERATE_FRAME) ? 1 : 0;
 	hcb.xLength = length;
 	hcb.xStiffness = stiffness;
 	hcb.xHairRandomness = randomness;
 	hcb.xHairStrandCount = strandCount;
-	hcb.xHairSegmentCount = max(segmentCount, 1);
+	hcb.xHairSegmentCount = std::max(segmentCount, 1u);
 	hcb.xHairParticleCount = hcb.xHairStrandCount * hcb.xHairSegmentCount;
 	hcb.xHairRandomSeed = randomSeed;
 	hcb.xHairViewDistance = viewDistance;
@@ -113,7 +134,7 @@ void wiHairParticle::UpdateRenderData(const MeshComponent& mesh, const MaterialC
 	device->EventEnd(threadID);
 }
 
-void wiHairParticle::Draw(const CameraComponent& camera, const MaterialComponent& material, SHADERTYPE shaderType, bool transparent, GRAPHICSTHREAD threadID) const
+void wiHairParticle::Draw(const CameraComponent& camera, const MaterialComponent& material, RENDERPASS renderPass, bool transparent, GRAPHICSTHREAD threadID) const
 {
 	if (strandCount == 0 || cb == nullptr)
 	{
@@ -127,7 +148,7 @@ void wiHairParticle::Draw(const CameraComponent& camera, const MaterialComponent
 
 	if (wiRenderer::IsWireRender())
 	{
-		if (transparent || shaderType == SHADERTYPE_DEPTHONLY)
+		if (transparent || renderPass == RENDERPASS_DEPTHONLY)
 		{
 			return;
 		}
@@ -136,9 +157,9 @@ void wiHairParticle::Draw(const CameraComponent& camera, const MaterialComponent
 	}
 	else
 	{
-		device->BindGraphicsPSO(&PSO[shaderType][transparent], threadID);
+		device->BindGraphicsPSO(&PSO[renderPass][transparent], threadID);
 
-		GPUResource* res[] = {
+		const GPUResource* res[] = {
 			material.GetBaseColorMap()
 		};
 		device->BindResources(PS, res, TEXSLOT_ONDEMAND0, ARRAYSIZE(res), threadID);
@@ -149,7 +170,7 @@ void wiHairParticle::Draw(const CameraComponent& camera, const MaterialComponent
 
 	device->BindResource(VS, particleBuffer.get(), 0, threadID);
 
-	device->Draw((int)strandCount * 12 * max(segmentCount, 1), 0, threadID);
+	device->Draw(strandCount * 12 * std::max(segmentCount, 1u), 0, threadID);
 
 	device->EventEnd(threadID);
 }
@@ -188,17 +209,17 @@ void wiHairParticle::LoadShaders()
 {
 	std::string path = wiRenderer::GetShaderPath();
 
-	vs = static_cast<VertexShader*>(wiResourceManager::GetShaderManager().add(path + "hairparticleVS.cso", wiResourceManager::VERTEXSHADER));
+	vs = static_cast<const VertexShader*>(wiResourceManager::GetShaderManager().add(path + "hairparticleVS.cso", wiResourceManager::VERTEXSHADER));
 
-	ps[SHADERTYPE_DEPTHONLY] = static_cast<PixelShader*>(wiResourceManager::GetShaderManager().add(path + "hairparticlePS_alphatestonly.cso", wiResourceManager::PIXELSHADER));
-	ps[SHADERTYPE_DEFERRED] = static_cast<PixelShader*>(wiResourceManager::GetShaderManager().add(path + "hairparticlePS_deferred.cso", wiResourceManager::PIXELSHADER));
-	ps[SHADERTYPE_FORWARD] = static_cast<PixelShader*>(wiResourceManager::GetShaderManager().add(path + "hairparticlePS_forward.cso", wiResourceManager::PIXELSHADER));
-	ps[SHADERTYPE_TILEDFORWARD] = static_cast<PixelShader*>(wiResourceManager::GetShaderManager().add(path + "hairparticlePS_tiledforward.cso", wiResourceManager::PIXELSHADER));
+	ps[RENDERPASS_DEPTHONLY] = static_cast<const PixelShader*>(wiResourceManager::GetShaderManager().add(path + "hairparticlePS_alphatestonly.cso", wiResourceManager::PIXELSHADER));
+	ps[RENDERPASS_DEFERRED] = static_cast<const PixelShader*>(wiResourceManager::GetShaderManager().add(path + "hairparticlePS_deferred.cso", wiResourceManager::PIXELSHADER));
+	ps[RENDERPASS_FORWARD] = static_cast<const PixelShader*>(wiResourceManager::GetShaderManager().add(path + "hairparticlePS_forward.cso", wiResourceManager::PIXELSHADER));
+	ps[RENDERPASS_TILEDFORWARD] = static_cast<const PixelShader*>(wiResourceManager::GetShaderManager().add(path + "hairparticlePS_tiledforward.cso", wiResourceManager::PIXELSHADER));
 
 
 	GraphicsDevice* device = wiRenderer::GetDevice();
 
-	for (int i = 0; i < SHADERTYPE_COUNT; ++i)
+	for (int i = 0; i < RENDERPASS_COUNT; ++i)
 	{
 		if (ps[i] == nullptr)
 		{
@@ -207,7 +228,7 @@ void wiHairParticle::LoadShaders()
 
 		for (int j = 0; j < 2; ++j)
 		{
-			if ((i == SHADERTYPE_DEPTHONLY || i == SHADERTYPE_DEFERRED) && j == 1)
+			if ((i == RENDERPASS_DEPTHONLY || i == RENDERPASS_DEFERRED) && j == 1)
 			{
 				continue;
 			}
@@ -223,17 +244,17 @@ void wiHairParticle::LoadShaders()
 
 			switch (i)
 			{
-			case SHADERTYPE_TEXTURE:
+			case RENDERPASS_TEXTURE:
 				desc.numRTs = 1;
 				desc.RTFormats[0] = wiRenderer::RTFormat_hdr;
 				break;
-			case SHADERTYPE_FORWARD:
-			case SHADERTYPE_TILEDFORWARD:
+			case RENDERPASS_FORWARD:
+			case RENDERPASS_TILEDFORWARD:
 				desc.numRTs = 2;
 				desc.RTFormats[0] = wiRenderer::RTFormat_hdr;
 				desc.RTFormats[1] = wiRenderer::RTFormat_gbuffer_1;
 				break;
-			case SHADERTYPE_DEFERRED:
+			case RENDERPASS_DEFERRED:
 				desc.numRTs = 3;
 				desc.RTFormats[0] = wiRenderer::RTFormat_gbuffer_0;
 				desc.RTFormats[1] = wiRenderer::RTFormat_gbuffer_1;
@@ -242,7 +263,7 @@ void wiHairParticle::LoadShaders()
 				break;
 			}
 
-			if (i == SHADERTYPE_TILEDFORWARD)
+			if (i == RENDERPASS_TILEDFORWARD)
 			{
 				desc.dss = &dss_equal; // opaque
 			}
@@ -257,7 +278,7 @@ void wiHairParticle::LoadShaders()
 		}
 	}
 
-	ps_simplest = static_cast<PixelShader*>(wiResourceManager::GetShaderManager().add(path + "hairparticlePS_simplest.cso", wiResourceManager::PIXELSHADER));
+	ps_simplest = static_cast<const PixelShader*>(wiResourceManager::GetShaderManager().add(path + "hairparticlePS_simplest.cso", wiResourceManager::PIXELSHADER));
 
 	{
 		GraphicsPSODesc desc;
@@ -272,7 +293,7 @@ void wiHairParticle::LoadShaders()
 		device->CreateGraphicsPSO(&desc, &PSO_wire);
 	}
 
-	cs_simulate = static_cast<ComputeShader*>(wiResourceManager::GetShaderManager().add(path + "hairparticle_simulateCS.cso", wiResourceManager::COMPUTESHADER));
+	cs_simulate = static_cast<const ComputeShader*>(wiResourceManager::GetShaderManager().add(path + "hairparticle_simulateCS.cso", wiResourceManager::COMPUTESHADER));
 
 	{
 		ComputePSODesc desc;
@@ -283,7 +304,7 @@ void wiHairParticle::LoadShaders()
 void wiHairParticle::CleanUp()
 {
 	SAFE_DELETE(vs);
-	for (int i = 0; i < SHADERTYPE_COUNT; ++i)
+	for (int i = 0; i < RENDERPASS_COUNT; ++i)
 	{
 		SAFE_DELETE(ps[i]);
 	}

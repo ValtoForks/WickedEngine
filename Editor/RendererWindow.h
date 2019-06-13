@@ -46,6 +46,7 @@ public:
 	wiCheckBox* boneLinesCheckBox;
 	wiCheckBox* debugEmittersCheckBox;
 	wiCheckBox* debugForceFieldsCheckBox;
+	wiCheckBox* debugRaytraceBVHCheckBox;
 	wiCheckBox* wireFrameCheckBox;
 	wiCheckBox* advancedLightCullingCheckBox;
 	wiCheckBox* debugLightCullingCheckBox;
@@ -73,7 +74,7 @@ public:
 	wiCheckBox* temporalAADebugCheckBox;
 	wiComboBox* textureQualityComboBox;
 	wiSlider*	mipLodBiasSlider;
-	wiSlider*	lightmapBakeBounceCountSlider;
+	wiSlider*	raytraceBounceCountSlider;
 
 	wiCheckBox* freezeCullingCameraCheckBox;
 

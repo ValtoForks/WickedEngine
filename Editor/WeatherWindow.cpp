@@ -8,7 +8,7 @@
 using namespace std;
 using namespace wiECS;
 using namespace wiSceneSystem;
-using namespace wiGraphicsTypes;
+using namespace wiGraphics;
 
 WeatherWindow::WeatherWindow(wiGUI* gui) : GUI(gui)
 {
@@ -150,7 +150,7 @@ WeatherWindow::WeatherWindow(wiGUI* gui) : GUI(gui)
 		auto& weather = GetWeather();
 		weather.ambient = XMFLOAT3(0.1f, 0.1f, 0.1f);
 		weather.horizon = XMFLOAT3(0.3f, 0.3f, 0.4f);
-		weather.zenith = XMFLOAT3(0.05f, 0.05f, 0.5f);
+		weather.zenith = XMFLOAT3(37.0f / 255.0f, 61.0f / 255.0f, 142.0f / 255.0f);
 		weather.cloudiness = 0.4f;
 		weather.fogStart = 100;
 		weather.fogEnd = 1000;
@@ -228,7 +228,7 @@ WeatherWindow::WeatherWindow(wiGUI* gui) : GUI(gui)
 	eliminateCoarseCascadesButton->SetPos(XMFLOAT2(x - 100, y += step * 3));
 	eliminateCoarseCascadesButton->OnClick([=](wiEventArgs args) {
 
-		Scene& scene = wiRenderer::GetScene();
+		Scene& scene = wiSceneSystem::GetScene();
 		for (size_t i = 0; i < scene.objects.GetCount(); ++i)
 		{
 			scene.objects[i].cascadeMask = 1;
@@ -277,7 +277,7 @@ WeatherWindow::WeatherWindow(wiGUI* gui) : GUI(gui)
 	weatherWindow->AddWidget(zenithColorPicker);
 
 
-	weatherWindow->Translate(XMFLOAT3(30, 30, 0));
+	weatherWindow->Translate(XMFLOAT3(130, 30, 0));
 	weatherWindow->SetVisible(false);
 }
 
@@ -304,7 +304,7 @@ void WeatherWindow::UpdateFromRenderer()
 
 WeatherComponent& WeatherWindow::GetWeather() const
 {
-	Scene& scene = wiRenderer::GetScene();
+	Scene& scene = wiSceneSystem::GetScene();
 	if (scene.weathers.GetCount() == 0)
 	{
 		scene.weathers.Create(CreateEntity());
@@ -314,7 +314,7 @@ WeatherComponent& WeatherWindow::GetWeather() const
 
 void WeatherWindow::InvalidateProbes() const
 {
-	Scene& scene = wiRenderer::GetScene();
+	Scene& scene = wiSceneSystem::GetScene();
 
 	// Also, we invalidate all environment probes to reflect the sky changes.
 	for (size_t i = 0; i < scene.probes.GetCount(); ++i)

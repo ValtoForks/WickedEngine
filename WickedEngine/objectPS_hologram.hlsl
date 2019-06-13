@@ -2,12 +2,20 @@
 
 float4 main(PixelInputType input) : SV_TARGET
 {
-	float2 UV = input.tex * g_xMat_texMulAdd.xy + g_xMat_texMulAdd.zw;
-
-	float4 color = xBaseColorMap.Sample(sampler_objectshader, UV);
-	color.rgb = max(color.r, max(color.g, color.b));
-	color *= g_xMat_baseColor * float4(input.instanceColor, 1);
-	color.rgb = DEGAMMA(color.rgb);
+	float4 color;
+	[branch]
+	if (g_xMat_uvset_baseColorMap >= 0)
+	{
+		const float2 UV_baseColorMap = g_xMat_uvset_baseColorMap == 0 ? input.uvsets.xy : input.uvsets.zw;
+		color = xBaseColorMap.Sample(sampler_objectshader, UV_baseColorMap);
+		color.rgb = DEGAMMA(color.rgb);
+		color.rgb = max(color.r, max(color.g, color.b));
+	}
+	else
+	{
+		color = 1;
+	}
+	color *= input.color;
 
 	float time = g_xFrame_Time;
 

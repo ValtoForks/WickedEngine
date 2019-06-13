@@ -24,65 +24,49 @@ struct LightOutputType
 
 #define DEFERREDLIGHT_MAKEPARAMS														\
 	ShaderEntityType light = EntityArray[(uint)g_xColor.x];								\
-	float3 diffuse, specular;															\
+	Lighting lighting = CreateLighting(0, 0, 0, 0);										\
+	float diffuse_alpha = 1;															\
+	float specular_alpha = 1;															\
 	float2 ScreenCoord = PSIn.pos2D.xy / PSIn.pos2D.w * float2(0.5f, -0.5f) + 0.5f;		\
 	float depth = texture_depth[PSIn.pos.xy];											\
 	float4 g0 = texture_gbuffer0[PSIn.pos.xy];											\
-	float4 baseColor = float4(g0.rgb, 1);												\
-	float ao = g0.a;																	\
 	float4 g1 = texture_gbuffer1[PSIn.pos.xy];											\
 	float4 g2 = texture_gbuffer2[PSIn.pos.xy];											\
 	float3 N = decode(g1.xy);															\
 	float2 velocity = g1.zw;															\
-	float roughness = g2.x;																\
-	float reflectance = g2.y;															\
-	float metalness = g2.z;																\
 	float2 ReprojectedScreenCoord = ScreenCoord + velocity;								\
 	float3 P = getPosition(ScreenCoord, depth);											\
 	float3 V = normalize(g_xCamera_CamPos - P);											\
-	Surface surface = CreateSurface(P, N, V, baseColor, roughness, reflectance, metalness);
+	Surface surface = CreateSurface(P, N, V, float4(g0.rgb, 1), g2.r, g2.g, g2.b, g2.a);
 
 
 #define DEFERREDLIGHT_DIRECTIONAL														\
-	LightingResult result = DirectionalLight(light, surface);							\
-	diffuse = result.diffuse;															\
-	specular = result.specular;
+	DirectionalLight(light, surface, lighting);
 
 #define DEFERREDLIGHT_SPOT																\
-	LightingResult result = SpotLight(light, surface);									\
-	diffuse = result.diffuse;															\
-	specular = result.specular;
+	SpotLight(light, surface, lighting);
 
 #define DEFERREDLIGHT_POINT																\
-	LightingResult result = PointLight(light, surface);									\
-	diffuse = result.diffuse;															\
-	specular = result.specular;
+	PointLight(light, surface, lighting);
 
 #define DEFERREDLIGHT_SPHERE															\
-	LightingResult result = SphereLight(light, surface);								\
-	diffuse = result.diffuse;															\
-	specular = result.specular;
+	SphereLight(light, surface, lighting);
 
 #define DEFERREDLIGHT_DISC																\
-	LightingResult result = DiscLight(light, surface);									\
-	diffuse = result.diffuse;															\
-	specular = result.specular;
+	DiscLight(light, surface, lighting);
 
 #define DEFERREDLIGHT_RECTANGLE															\
-	LightingResult result = RectangleLight(light, surface);								\
-	diffuse = result.diffuse;															\
-	specular = result.specular;
+	RectangleLight(light, surface, lighting);
 
 #define DEFERREDLIGHT_TUBE																\
-	LightingResult result = TubeLight(light, surface);									\
-	diffuse = result.diffuse;															\
-	specular = result.specular;
+	TubeLight(light, surface, lighting);
 
 
 #define DEFERREDLIGHT_RETURN															\
+	LightingPart combined_lighting = CombineLighting(surface, lighting);				\
 	LightOutputType Out;																\
-	Out.diffuse = float4(diffuse, 1);													\
-	Out.specular = float4(specular, 1);													\
+	Out.diffuse = float4(combined_lighting.diffuse, diffuse_alpha);						\
+	Out.specular = float4(combined_lighting.specular, specular_alpha);					\
 	return Out;
 
 #endif // _LIGHTHF_

@@ -2,12 +2,11 @@
 #define _GRAPHICSDEVICE_H_
 
 #include "CommonInclude.h"
-#include "wiThreadSafeManager.h"
 #include "wiEnums.h"
 #include "wiGraphicsDescriptors.h"
 #include "wiGraphicsResource.h"
 
-namespace wiGraphicsTypes
+namespace wiGraphics
 {
 
 	class GraphicsDevice
@@ -17,6 +16,7 @@ namespace wiGraphicsTypes
 		bool VSYNC = true;
 		int SCREENWIDTH = 0;
 		int SCREENHEIGHT = 0;
+		bool DEBUGDEVICE = false;
 		bool FULLSCREEN = false;
 		bool RESOLUTIONCHANGED = false;
 		FORMAT BACKBUFFER_FORMAT = FORMAT_R10G10B10A2_UNORM;
@@ -26,12 +26,13 @@ namespace wiGraphicsTypes
 		bool CONSERVATIVE_RASTERIZATION = false;
 		bool RASTERIZER_ORDERED_VIEWS = false;
 		bool UNORDEREDACCESSTEXTURE_LOAD_EXT = false;
+
 	public:
 
-		virtual HRESULT CreateBuffer(const GPUBufferDesc *pDesc, const SubresourceData* pInitialData, GPUBuffer *ppBuffer) = 0;
-		virtual HRESULT CreateTexture1D(const TextureDesc* pDesc, const SubresourceData *pInitialData, Texture1D **ppTexture1D) = 0;
-		virtual HRESULT CreateTexture2D(const TextureDesc* pDesc, const SubresourceData *pInitialData, Texture2D **ppTexture2D) = 0;
-		virtual HRESULT CreateTexture3D(const TextureDesc* pDesc, const SubresourceData *pInitialData, Texture3D **ppTexture3D) = 0;
+		virtual HRESULT CreateBuffer(const GPUBufferDesc *pDesc, const SubresourceData* pInitialData, GPUBuffer *pBuffer) = 0;
+		virtual HRESULT CreateTexture1D(const TextureDesc* pDesc, const SubresourceData *pInitialData, Texture1D *pTexture1D) = 0;
+		virtual HRESULT CreateTexture2D(const TextureDesc* pDesc, const SubresourceData *pInitialData, Texture2D *pTexture2D) = 0;
+		virtual HRESULT CreateTexture3D(const TextureDesc* pDesc, const SubresourceData *pInitialData, Texture3D *pTexture3D) = 0;
 		virtual HRESULT CreateInputLayout(const VertexLayoutDesc *pInputElementDescs, UINT NumElements, const ShaderByteCode* shaderCode, VertexLayout *pInputLayout) = 0;
 		virtual HRESULT CreateVertexShader(const void *pShaderBytecode, SIZE_T BytecodeLength, VertexShader *pVertexShader) = 0;
 		virtual HRESULT CreatePixelShader(const void *pShaderBytecode, SIZE_T BytecodeLength, PixelShader *pPixelShader) = 0;
@@ -113,48 +114,63 @@ namespace wiGraphicsTypes
 		inline FORMAT GetBackBufferFormat() const { return BACKBUFFER_FORMAT; }
 		inline static UINT GetBackBufferCount() { return BACKBUFFER_COUNT; }
 
+		inline bool IsDebugDevice() const { return DEBUGDEVICE; }
+
 
 		///////////////Thread-sensitive////////////////////////
 
 		virtual void BindScissorRects(UINT numRects, const Rect* rects, GRAPHICSTHREAD threadID) = 0;
 		virtual void BindViewports(UINT NumViewports, const ViewPort *pViewports, GRAPHICSTHREAD threadID) = 0;
-		virtual void BindRenderTargets(UINT NumViews, Texture2D* const *ppRenderTargets, Texture2D* depthStencilTexture, GRAPHICSTHREAD threadID, int arrayIndex = -1) = 0;
-		virtual void ClearRenderTarget(Texture* pTexture, const FLOAT ColorRGBA[4], GRAPHICSTHREAD threadID, int arrayIndex = -1) = 0;
-		virtual void ClearDepthStencil(Texture2D* pTexture, UINT ClearFlags, FLOAT Depth, UINT8 Stencil, GRAPHICSTHREAD threadID, int arrayIndex = -1) = 0;
-		virtual void BindResource(SHADERSTAGE stage, GPUResource* resource, int slot, GRAPHICSTHREAD threadID, int arrayIndex = -1) = 0;
-		virtual void BindResources(SHADERSTAGE stage, GPUResource *const* resources, int slot, int count, GRAPHICSTHREAD threadID) = 0;
-		virtual void BindUAV(SHADERSTAGE stage, GPUResource* resource, int slot, GRAPHICSTHREAD threadID, int arrayIndex = -1) = 0;
-		virtual void BindUAVs(SHADERSTAGE stage, GPUResource *const* resources, int slot, int count, GRAPHICSTHREAD threadID) = 0;
-		virtual void UnbindResources(int slot, int num, GRAPHICSTHREAD threadID) = 0;
-		virtual void UnbindUAVs(int slot, int num, GRAPHICSTHREAD threadID) = 0;
-		virtual void BindSampler(SHADERSTAGE stage, Sampler* sampler, int slot, GRAPHICSTHREAD threadID) = 0;
-		virtual void BindConstantBuffer(SHADERSTAGE stage, GPUBuffer* buffer, int slot, GRAPHICSTHREAD threadID) = 0;
-		virtual void BindVertexBuffers(GPUBuffer *const* vertexBuffers, int slot, int count, const UINT* strides, const UINT* offsets, GRAPHICSTHREAD threadID) = 0;
-		virtual void BindIndexBuffer(GPUBuffer* indexBuffer, const INDEXBUFFER_FORMAT format, UINT offset, GRAPHICSTHREAD threadID) = 0;
+		virtual void BindRenderTargets(UINT NumViews, const Texture2D* const * ppRenderTargets, const Texture2D* depthStencilTexture, GRAPHICSTHREAD threadID, int arrayIndex = -1) = 0;
+		virtual void ClearRenderTarget(const Texture* pTexture, const FLOAT ColorRGBA[4], GRAPHICSTHREAD threadID, int arrayIndex = -1) = 0;
+		virtual void ClearDepthStencil(const Texture2D* pTexture, UINT ClearFlags, FLOAT Depth, UINT8 Stencil, GRAPHICSTHREAD threadID, int arrayIndex = -1) = 0;
+		virtual void BindResource(SHADERSTAGE stage, const GPUResource* resource, UINT slot, GRAPHICSTHREAD threadID, int arrayIndex = -1) = 0;
+		virtual void BindResources(SHADERSTAGE stage, const GPUResource *const* resources, UINT slot, UINT count, GRAPHICSTHREAD threadID) = 0;
+		virtual void BindUAV(SHADERSTAGE stage, const GPUResource* resource, UINT slot, GRAPHICSTHREAD threadID, int arrayIndex = -1) = 0;
+		virtual void BindUAVs(SHADERSTAGE stage, const GPUResource *const* resources, UINT slot, UINT count, GRAPHICSTHREAD threadID) = 0;
+		virtual void UnbindResources(UINT slot, UINT num, GRAPHICSTHREAD threadID) = 0;
+		virtual void UnbindUAVs(UINT slot, UINT num, GRAPHICSTHREAD threadID) = 0;
+		virtual void BindSampler(SHADERSTAGE stage, const Sampler* sampler, UINT slot, GRAPHICSTHREAD threadID) = 0;
+		virtual void BindConstantBuffer(SHADERSTAGE stage, const GPUBuffer* buffer, UINT slot, GRAPHICSTHREAD threadID) = 0;
+		virtual void BindVertexBuffers(const GPUBuffer *const* vertexBuffers, UINT slot, UINT count, const UINT* strides, const UINT* offsets, GRAPHICSTHREAD threadID) = 0;
+		virtual void BindIndexBuffer(const GPUBuffer* indexBuffer, const INDEXBUFFER_FORMAT format, UINT offset, GRAPHICSTHREAD threadID) = 0;
 		virtual void BindStencilRef(UINT value, GRAPHICSTHREAD threadID) = 0;
-		virtual void BindBlendFactor(XMFLOAT4 value, GRAPHICSTHREAD threadID) = 0;
-		virtual void BindGraphicsPSO(GraphicsPSO* pso, GRAPHICSTHREAD threadID) = 0;
-		virtual void BindComputePSO(ComputePSO* pso, GRAPHICSTHREAD threadID) = 0;
-		virtual void Draw(int vertexCount, UINT startVertexLocation, GRAPHICSTHREAD threadID) = 0;
-		virtual void DrawIndexed(int indexCount, UINT startIndexLocation, UINT baseVertexLocation, GRAPHICSTHREAD threadID) = 0;
-		virtual void DrawInstanced(int vertexCount, int instanceCount, UINT startVertexLocation, UINT startInstanceLocation, GRAPHICSTHREAD threadID) = 0;
-		virtual void DrawIndexedInstanced(int indexCount, int instanceCount, UINT startIndexLocation, UINT baseVertexLocation, UINT startInstanceLocation, GRAPHICSTHREAD threadID) = 0;
-		virtual void DrawInstancedIndirect(GPUBuffer* args, UINT args_offset, GRAPHICSTHREAD threadID) = 0;
-		virtual void DrawIndexedInstancedIndirect(GPUBuffer* args, UINT args_offset, GRAPHICSTHREAD threadID) = 0;
+		virtual void BindBlendFactor(float r, float g, float b, float a, GRAPHICSTHREAD threadID) = 0;
+		virtual void BindGraphicsPSO(const GraphicsPSO* pso, GRAPHICSTHREAD threadID) = 0;
+		virtual void BindComputePSO(const ComputePSO* pso, GRAPHICSTHREAD threadID) = 0;
+		virtual void Draw(UINT vertexCount, UINT startVertexLocation, GRAPHICSTHREAD threadID) = 0;
+		virtual void DrawIndexed(UINT indexCount, UINT startIndexLocation, UINT baseVertexLocation, GRAPHICSTHREAD threadID) = 0;
+		virtual void DrawInstanced(UINT vertexCount, UINT instanceCount, UINT startVertexLocation, UINT startInstanceLocation, GRAPHICSTHREAD threadID) = 0;
+		virtual void DrawIndexedInstanced(UINT indexCount, UINT instanceCount, UINT startIndexLocation, UINT baseVertexLocation, UINT startInstanceLocation, GRAPHICSTHREAD threadID) = 0;
+		virtual void DrawInstancedIndirect(const GPUBuffer* args, UINT args_offset, GRAPHICSTHREAD threadID) = 0;
+		virtual void DrawIndexedInstancedIndirect(const GPUBuffer* args, UINT args_offset, GRAPHICSTHREAD threadID) = 0;
 		virtual void Dispatch(UINT threadGroupCountX, UINT threadGroupCountY, UINT threadGroupCountZ, GRAPHICSTHREAD threadID) = 0;
-		virtual void DispatchIndirect(GPUBuffer* args, UINT args_offset, GRAPHICSTHREAD threadID) = 0;
-		virtual void CopyTexture2D(Texture2D* pDst, Texture2D* pSrc, GRAPHICSTHREAD threadID) = 0;
-		virtual void CopyTexture2D_Region(Texture2D* pDst, UINT dstMip, UINT dstX, UINT dstY, Texture2D* pSrc, UINT srcMip, GRAPHICSTHREAD threadID) = 0;
-		virtual void MSAAResolve(Texture2D* pDst, Texture2D* pSrc, GRAPHICSTHREAD threadID) = 0;
-		virtual void UpdateBuffer(GPUBuffer* buffer, const void* data, GRAPHICSTHREAD threadID, int dataSize = -1) = 0;
-		virtual void* AllocateFromRingBuffer(GPURingBuffer* buffer, size_t dataSize, UINT& offsetIntoBuffer, GRAPHICSTHREAD threadID) = 0;
-		virtual void InvalidateBufferAccess(GPUBuffer* buffer, GRAPHICSTHREAD threadID) = 0;
-		virtual bool DownloadResource(GPUResource* resourceToDownload, GPUResource* resourceDest, void* dataDest, GRAPHICSTHREAD threadID) = 0;
-		virtual void QueryBegin(GPUQuery *query, GRAPHICSTHREAD threadID) = 0;
-		virtual void QueryEnd(GPUQuery *query, GRAPHICSTHREAD threadID) = 0;
-		virtual bool QueryRead(GPUQuery *query, GRAPHICSTHREAD threadID) = 0;
-		virtual void UAVBarrier(GPUResource *const* uavs, UINT NumBarriers, GRAPHICSTHREAD threadID) = 0;
-		virtual void TransitionBarrier(GPUResource *const* resources, UINT NumBarriers, RESOURCE_STATES stateBefore, RESOURCE_STATES stateAfter, GRAPHICSTHREAD threadID) = 0;
+		virtual void DispatchIndirect(const GPUBuffer* args, UINT args_offset, GRAPHICSTHREAD threadID) = 0;
+		virtual void CopyTexture2D(const Texture2D* pDst, const Texture2D* pSrc, GRAPHICSTHREAD threadID) = 0;
+		virtual void CopyTexture2D_Region(const Texture2D* pDst, UINT dstMip, UINT dstX, UINT dstY, const Texture2D* pSrc, UINT srcMip, GRAPHICSTHREAD threadID) = 0;
+		virtual void MSAAResolve(const Texture2D* pDst, const Texture2D* pSrc, GRAPHICSTHREAD threadID) = 0;
+		virtual void UpdateBuffer(const GPUBuffer* buffer, const void* data, GRAPHICSTHREAD threadID, int dataSize = -1) = 0;
+		virtual bool DownloadResource(const GPUResource* resourceToDownload, const GPUResource* resourceDest, void* dataDest, GRAPHICSTHREAD threadID) = 0;
+		virtual void QueryBegin(const GPUQuery *query, GRAPHICSTHREAD threadID) = 0;
+		virtual void QueryEnd(const GPUQuery *query, GRAPHICSTHREAD threadID) = 0;
+		virtual bool QueryRead(const GPUQuery *query, GPUQueryResult* result) = 0;
+		virtual void UAVBarrier(const GPUResource *const* uavs, UINT NumBarriers, GRAPHICSTHREAD threadID) = 0;
+		virtual void TransitionBarrier(const GPUResource *const* resources, UINT NumBarriers, RESOURCE_STATES stateBefore, RESOURCE_STATES stateAfter, GRAPHICSTHREAD threadID) = 0;
+
+		struct GPUAllocation
+		{
+			void* data = nullptr;				// application can write to this. Reads might be not supported or slow. The offset is already applied
+			const GPUBuffer* buffer = nullptr;	// application can bind it to the GPU
+			UINT offset = 0;					// allocation's offset from the GPUbuffer's beginning
+
+			// Returns true if the allocation was successful
+			inline bool IsValid() const { return data != nullptr && buffer != nullptr; }
+		};
+		// Allocates temporary memory that the CPU can write and GPU can read. 
+		//	It is only alive for one frame and automatically invalidated after that.
+		//	The CPU pointer gets invalidated as soon as there is a Draw() or Dispatch() event on the same thread
+		//	This allocation can be used to provide temporary vertex buffer, index buffer or raw buffer data to shaders
+		virtual GPUAllocation AllocateGPU(size_t dataSize, GRAPHICSTHREAD threadID) = 0;
 		
 		virtual void EventBegin(const std::string& name, GRAPHICSTHREAD threadID) = 0;
 		virtual void EventEnd(GRAPHICSTHREAD threadID) = 0;

@@ -26,7 +26,7 @@
 #include <sstream>
 
 using namespace std;
-using namespace wiGraphicsTypes;
+using namespace wiGraphics;
 using namespace wiRectPacker;
 using namespace wiSceneSystem;
 using namespace wiECS;
@@ -48,10 +48,6 @@ void Editor::Initialize()
 	wiRenderer::GetDevice()->SetVSyncEnabled(true);
 	wiRenderer::SetOcclusionCullingEnabled(true);
 
-	wiInputManager::addXInput(new wiXInput());
-
-	wiProfiler::SetEnabled(true);
-
 	renderComponent = new EditorComponent;
 	renderComponent->Initialize();
 	loader = new EditorLoadingScreen;
@@ -61,9 +57,9 @@ void Editor::Initialize()
 	renderComponent->loader = loader;
 	renderComponent->main = this;
 
-	loader->addLoadingComponent(renderComponent, this);
+	loader->addLoadingComponent(renderComponent, this, 0.2f);
 
-	ActivatePath(loader);
+	ActivatePath(loader, 0.2f);
 
 }
 
@@ -73,7 +69,7 @@ void EditorLoadingScreen::Load()
 		WIFALIGN_CENTER, WIFALIGN_CENTER));
 	addFont(&font);
 
-	sprite = wiSprite("../logo/logo_small.png");
+	sprite = wiSprite("../images/logo_small.png");
 	sprite.anim.opa = 1;
 	sprite.anim.repeatable = true;
 	sprite.params.pos = XMFLOAT3(wiRenderer::GetDevice()->GetScreenWidth()*0.5f, wiRenderer::GetDevice()->GetScreenHeight()*0.5f - font.textHeight(), 0);
@@ -85,13 +81,13 @@ void EditorLoadingScreen::Load()
 
 	__super::Load();
 }
-void EditorLoadingScreen::Compose()
+void EditorLoadingScreen::Update(float dt)
 {
 	font.params.posX = (int)(wiRenderer::GetDevice()->GetScreenWidth()*0.5f);
 	font.params.posY = (int)(wiRenderer::GetDevice()->GetScreenHeight()*0.5f);
 	sprite.params.pos = XMFLOAT3(wiRenderer::GetDevice()->GetScreenWidth()*0.5f, wiRenderer::GetDevice()->GetScreenHeight()*0.5f - font.textHeight(), 0);
 
-	__super::Compose();
+	__super::Update(dt);
 }
 void EditorLoadingScreen::Unload()
 {
@@ -162,21 +158,20 @@ void EditorComponent::Load()
 	__super::Load();
 
 	translator.enabled = false;
-	Translator::LoadShaders();
 
 
 	float screenW = (float)wiRenderer::GetDevice()->GetScreenWidth();
 	float screenH = (float)wiRenderer::GetDevice()->GetScreenHeight();
 
-	float step = 105, x = -step;
-
+	XMFLOAT2 option_size = XMFLOAT2(100, 28);
+	float step = (option_size.y + 5) * -1, x = screenW - option_size.x, y = screenH - option_size.y;
 
 
 
 	wiButton* rendererWnd_Toggle = new wiButton("Renderer");
 	rendererWnd_Toggle->SetTooltip("Renderer settings window");
-	rendererWnd_Toggle->SetPos(XMFLOAT2(x += step, screenH - 40));
-	rendererWnd_Toggle->SetSize(XMFLOAT2(100, 40));
+	rendererWnd_Toggle->SetPos(XMFLOAT2(x, y));
+	rendererWnd_Toggle->SetSize(option_size);
 	rendererWnd_Toggle->OnClick([=](wiEventArgs args) {
 		rendererWnd->rendererWindow->SetVisible(!rendererWnd->rendererWindow->IsVisible());
 	});
@@ -184,8 +179,8 @@ void EditorComponent::Load()
 
 	wiButton* weatherWnd_Toggle = new wiButton("Weather");
 	weatherWnd_Toggle->SetTooltip("World settings window");
-	weatherWnd_Toggle->SetPos(XMFLOAT2(x += step, screenH - 40));
-	weatherWnd_Toggle->SetSize(XMFLOAT2(100, 40));
+	weatherWnd_Toggle->SetPos(XMFLOAT2(x, y += step));
+	weatherWnd_Toggle->SetSize(option_size);
 	weatherWnd_Toggle->OnClick([=](wiEventArgs args) {
 		weatherWnd->weatherWindow->SetVisible(!weatherWnd->weatherWindow->IsVisible());
 	});
@@ -193,8 +188,8 @@ void EditorComponent::Load()
 
 	wiButton* objectWnd_Toggle = new wiButton("Object");
 	objectWnd_Toggle->SetTooltip("Object settings window");
-	objectWnd_Toggle->SetPos(XMFLOAT2(x += step, screenH - 40));
-	objectWnd_Toggle->SetSize(XMFLOAT2(100, 40));
+	objectWnd_Toggle->SetPos(XMFLOAT2(x, y += step));
+	objectWnd_Toggle->SetSize(option_size);
 	objectWnd_Toggle->OnClick([=](wiEventArgs args) {
 		objectWnd->objectWindow->SetVisible(!objectWnd->objectWindow->IsVisible());
 	});
@@ -202,8 +197,8 @@ void EditorComponent::Load()
 
 	wiButton* meshWnd_Toggle = new wiButton("Mesh");
 	meshWnd_Toggle->SetTooltip("Mesh settings window");
-	meshWnd_Toggle->SetPos(XMFLOAT2(x += step, screenH - 40));
-	meshWnd_Toggle->SetSize(XMFLOAT2(100, 40));
+	meshWnd_Toggle->SetPos(XMFLOAT2(x, y += step));
+	meshWnd_Toggle->SetSize(option_size);
 	meshWnd_Toggle->OnClick([=](wiEventArgs args) {
 		meshWnd->meshWindow->SetVisible(!meshWnd->meshWindow->IsVisible());
 	});
@@ -211,8 +206,8 @@ void EditorComponent::Load()
 
 	wiButton* materialWnd_Toggle = new wiButton("Material");
 	materialWnd_Toggle->SetTooltip("Material settings window");
-	materialWnd_Toggle->SetPos(XMFLOAT2(x += step, screenH - 40));
-	materialWnd_Toggle->SetSize(XMFLOAT2(100, 40));
+	materialWnd_Toggle->SetPos(XMFLOAT2(x, y += step));
+	materialWnd_Toggle->SetSize(option_size);
 	materialWnd_Toggle->OnClick([=](wiEventArgs args) {
 		materialWnd->materialWindow->SetVisible(!materialWnd->materialWindow->IsVisible());
 	});
@@ -220,8 +215,8 @@ void EditorComponent::Load()
 
 	wiButton* postprocessWnd_Toggle = new wiButton("PostProcess");
 	postprocessWnd_Toggle->SetTooltip("Postprocess settings window");
-	postprocessWnd_Toggle->SetPos(XMFLOAT2(x += step, screenH - 40));
-	postprocessWnd_Toggle->SetSize(XMFLOAT2(100, 40));
+	postprocessWnd_Toggle->SetPos(XMFLOAT2(x, y += step));
+	postprocessWnd_Toggle->SetSize(option_size);
 	postprocessWnd_Toggle->OnClick([=](wiEventArgs args) {
 		postprocessWnd->ppWindow->SetVisible(!postprocessWnd->ppWindow->IsVisible());
 	});
@@ -229,8 +224,8 @@ void EditorComponent::Load()
 
 	wiButton* cameraWnd_Toggle = new wiButton("Camera");
 	cameraWnd_Toggle->SetTooltip("Camera settings window");
-	cameraWnd_Toggle->SetPos(XMFLOAT2(x += step, screenH - 40));
-	cameraWnd_Toggle->SetSize(XMFLOAT2(100, 40));
+	cameraWnd_Toggle->SetPos(XMFLOAT2(x, y += step));
+	cameraWnd_Toggle->SetSize(option_size);
 	cameraWnd_Toggle->OnClick([=](wiEventArgs args) {
 		cameraWnd->cameraWindow->SetVisible(!cameraWnd->cameraWindow->IsVisible());
 	});
@@ -238,8 +233,8 @@ void EditorComponent::Load()
 
 	wiButton* envProbeWnd_Toggle = new wiButton("EnvProbe");
 	envProbeWnd_Toggle->SetTooltip("Environment probe settings window");
-	envProbeWnd_Toggle->SetPos(XMFLOAT2(x += step, screenH - 40));
-	envProbeWnd_Toggle->SetSize(XMFLOAT2(100, 40));
+	envProbeWnd_Toggle->SetPos(XMFLOAT2(x, y += step));
+	envProbeWnd_Toggle->SetSize(option_size);
 	envProbeWnd_Toggle->OnClick([=](wiEventArgs args) {
 		envProbeWnd->envProbeWindow->SetVisible(!envProbeWnd->envProbeWindow->IsVisible());
 	});
@@ -247,8 +242,8 @@ void EditorComponent::Load()
 
 	wiButton* decalWnd_Toggle = new wiButton("Decal");
 	decalWnd_Toggle->SetTooltip("Decal settings window");
-	decalWnd_Toggle->SetPos(XMFLOAT2(x += step, screenH - 40));
-	decalWnd_Toggle->SetSize(XMFLOAT2(100, 40));
+	decalWnd_Toggle->SetPos(XMFLOAT2(x, y += step));
+	decalWnd_Toggle->SetSize(option_size);
 	decalWnd_Toggle->OnClick([=](wiEventArgs args) {
 		decalWnd->decalWindow->SetVisible(!decalWnd->decalWindow->IsVisible());
 	});
@@ -256,8 +251,8 @@ void EditorComponent::Load()
 
 	wiButton* lightWnd_Toggle = new wiButton("Light");
 	lightWnd_Toggle->SetTooltip("Light settings window");
-	lightWnd_Toggle->SetPos(XMFLOAT2(x += step, screenH - 40));
-	lightWnd_Toggle->SetSize(XMFLOAT2(100, 40));
+	lightWnd_Toggle->SetPos(XMFLOAT2(x, y += step));
+	lightWnd_Toggle->SetSize(option_size);
 	lightWnd_Toggle->OnClick([=](wiEventArgs args) {
 		lightWnd->lightWindow->SetVisible(!lightWnd->lightWindow->IsVisible());
 	});
@@ -265,8 +260,8 @@ void EditorComponent::Load()
 
 	wiButton* animWnd_Toggle = new wiButton("Animation");
 	animWnd_Toggle->SetTooltip("Animation inspector window");
-	animWnd_Toggle->SetPos(XMFLOAT2(x += step, screenH - 40));
-	animWnd_Toggle->SetSize(XMFLOAT2(100, 40));
+	animWnd_Toggle->SetPos(XMFLOAT2(x, y += step));
+	animWnd_Toggle->SetSize(option_size);
 	animWnd_Toggle->OnClick([=](wiEventArgs args) {
 		animWnd->animWindow->SetVisible(!animWnd->animWindow->IsVisible());
 	});
@@ -274,8 +269,8 @@ void EditorComponent::Load()
 
 	wiButton* emitterWnd_Toggle = new wiButton("Emitter");
 	emitterWnd_Toggle->SetTooltip("Emitter Particle System properties");
-	emitterWnd_Toggle->SetPos(XMFLOAT2(x += step, screenH - 40));
-	emitterWnd_Toggle->SetSize(XMFLOAT2(100, 40));
+	emitterWnd_Toggle->SetPos(XMFLOAT2(x, y += step));
+	emitterWnd_Toggle->SetSize(option_size);
 	emitterWnd_Toggle->OnClick([=](wiEventArgs args) {
 		emitterWnd->emitterWindow->SetVisible(!emitterWnd->emitterWindow->IsVisible());
 	});
@@ -283,8 +278,8 @@ void EditorComponent::Load()
 
 	wiButton* hairWnd_Toggle = new wiButton("HairParticle");
 	hairWnd_Toggle->SetTooltip("Emitter Particle System properties");
-	hairWnd_Toggle->SetPos(XMFLOAT2(x += step, screenH - 40));
-	hairWnd_Toggle->SetSize(XMFLOAT2(100, 40));
+	hairWnd_Toggle->SetPos(XMFLOAT2(x, y += step));
+	hairWnd_Toggle->SetSize(option_size);
 	hairWnd_Toggle->OnClick([=](wiEventArgs args) {
 		hairWnd->hairWindow->SetVisible(!hairWnd->hairWindow->IsVisible());
 	});
@@ -292,8 +287,8 @@ void EditorComponent::Load()
 
 	wiButton* forceFieldWnd_Toggle = new wiButton("ForceField");
 	forceFieldWnd_Toggle->SetTooltip("Force Field properties");
-	forceFieldWnd_Toggle->SetPos(XMFLOAT2(x += step, screenH - 40));
-	forceFieldWnd_Toggle->SetSize(XMFLOAT2(100, 40));
+	forceFieldWnd_Toggle->SetPos(XMFLOAT2(x, y += step));
+	forceFieldWnd_Toggle->SetSize(option_size);
 	forceFieldWnd_Toggle->OnClick([=](wiEventArgs args) {
 		forceFieldWnd->forceFieldWindow->SetVisible(!forceFieldWnd->forceFieldWindow->IsVisible());
 	});
@@ -301,8 +296,8 @@ void EditorComponent::Load()
 
 	wiButton* oceanWnd_Toggle = new wiButton("Ocean");
 	oceanWnd_Toggle->SetTooltip("Ocean Simulator properties");
-	oceanWnd_Toggle->SetPos(XMFLOAT2(x += step, screenH - 40));
-	oceanWnd_Toggle->SetSize(XMFLOAT2(100, 40));
+	oceanWnd_Toggle->SetPos(XMFLOAT2(x, y += step));
+	oceanWnd_Toggle->SetSize(option_size);
 	oceanWnd_Toggle->OnClick([=](wiEventArgs args) {
 		oceanWnd->oceanWindow->SetVisible(!oceanWnd->oceanWindow->IsVisible());
 	});
@@ -402,7 +397,7 @@ void EditorComponent::Load()
 			wiArchive archive(fileName, false);
 			if (archive.IsOpen())
 			{
-				Scene& scene = wiRenderer::GetScene();
+				Scene& scene = wiSceneSystem::GetScene();
 
 				scene.Serialize(archive);
 
@@ -451,19 +446,25 @@ void EditorComponent::Load()
 
 					if (!extension.compare("WISCENE")) // engine-serialized
 					{
-						wiRenderer::LoadModel(fileName);
+						wiSceneSystem::LoadModel(fileName);
 					}
 					else if (!extension.compare("OBJ")) // wavefront-obj
 					{
-						ImportModel_OBJ(fileName);
+						Scene scene;
+						ImportModel_OBJ(fileName, scene);
+						wiSceneSystem::GetScene().Merge(scene);
 					}
 					else if (!extension.compare("GLTF")) // text-based gltf
 					{
-						ImportModel_GLTF(fileName);
+						Scene scene;
+						ImportModel_GLTF(fileName, scene);
+						wiSceneSystem::GetScene().Merge(scene);
 					}
 					else if (!extension.compare("GLB")) // binary gltf
 					{
-						ImportModel_GLTF(fileName);
+						Scene scene;
+						ImportModel_GLTF(fileName, scene);
+						wiSceneSystem::GetScene().Merge(scene);
 					}
 				});
 				loader->onFinished([=] {
@@ -706,7 +707,7 @@ void EditorComponent::FixedUpdate()
 }
 void EditorComponent::Update(float dt)
 {
-	Scene& scene = wiRenderer::GetScene();
+	Scene& scene = wiSceneSystem::GetScene();
 	CameraComponent& camera = wiRenderer::GetCamera();
 
 	animWnd->Update();
@@ -747,12 +748,12 @@ void EditorComponent::Update(float dt)
 			xDif = 0.1f*xDif*(1.0f / 60.0f);
 			yDif = 0.1f*yDif*(1.0f / 60.0f);
 			wiInputManager::setpointer(originalMouse);
-			wiInputManager::hidepointer(false);
+			wiInputManager::hidepointer(true);
 		}
 		else
 		{
 			camControlStart = true;
-			wiInputManager::hidepointer(true);
+			wiInputManager::hidepointer(false);
 		}
 
 		const float buttonrotSpeed = 2.0f / 60.0f;
@@ -773,6 +774,14 @@ void EditorComponent::Update(float dt)
 			yDif += buttonrotSpeed;
 		}
 
+		const XMFLOAT4 leftStick = wiInputManager::getanalog(GAMEPAD_ANALOG_THUMBSTICK_L, 0);
+		const XMFLOAT4 rightStick = wiInputManager::getanalog(GAMEPAD_ANALOG_THUMBSTICK_R, 0);
+		const XMFLOAT4 rightTrigger = wiInputManager::getanalog(GAMEPAD_ANALOG_TRIGGER_R, 0);
+		
+		const float jostickrotspeed = 0.05f;
+		xDif += rightStick.x * jostickrotspeed;
+		yDif += rightStick.y * jostickrotspeed;
+
 		xDif *= cameraWnd->rotationspeedSlider->GetValue();
 		yDif *= cameraWnd->rotationspeedSlider->GetValue();
 
@@ -782,22 +791,22 @@ void EditorComponent::Update(float dt)
 			// FPS Camera
 			const float clampedDT = min(dt, 0.1f); // if dt > 100 millisec, don't allow the camera to jump too far...
 
-			const float speed = (wiInputManager::down(VK_SHIFT) ? 10.0f : 1.0f) * cameraWnd->movespeedSlider->GetValue() * clampedDT;
+			const float speed = ((wiInputManager::down(VK_SHIFT) ? 10.0f : 1.0f) + rightTrigger.x * 10.0f) * cameraWnd->movespeedSlider->GetValue() * clampedDT;
 			static XMVECTOR move = XMVectorSet(0, 0, 0, 0);
-			XMVECTOR moveNew = XMVectorSet(0, 0, 0, 0);
-
+			XMVECTOR moveNew = XMVectorSet(leftStick.x, 0, leftStick.y, 0);
 
 			if (!wiInputManager::down(VK_CONTROL))
 			{
 				// Only move camera if control not pressed
-				if (wiInputManager::down('A')) { moveNew += XMVectorSet(-1, 0, 0, 0); }
-				if (wiInputManager::down('D')) { moveNew += XMVectorSet(1, 0, 0, 0);	 }
-				if (wiInputManager::down('W')) { moveNew += XMVectorSet(0, 0, 1, 0);	 }
-				if (wiInputManager::down('S')) { moveNew += XMVectorSet(0, 0, -1, 0); }
-				if (wiInputManager::down('E')) { moveNew += XMVectorSet(0, 1, 0, 0);	 }
-				if (wiInputManager::down('Q')) { moveNew += XMVectorSet(0, -1, 0, 0); }
-				moveNew = XMVector3Normalize(moveNew) * speed;
+				if (wiInputManager::down('A') || wiInputManager::down(GAMEPAD_BUTTON_LEFT, INPUT_TYPE_GAMEPAD)) { moveNew += XMVectorSet(-1, 0, 0, 0); }
+				if (wiInputManager::down('D') || wiInputManager::down(GAMEPAD_BUTTON_RIGHT, INPUT_TYPE_GAMEPAD)) { moveNew += XMVectorSet(1, 0, 0, 0);	 }
+				if (wiInputManager::down('W') || wiInputManager::down(GAMEPAD_BUTTON_UP, INPUT_TYPE_GAMEPAD)) { moveNew += XMVectorSet(0, 0, 1, 0);	 }
+				if (wiInputManager::down('S') || wiInputManager::down(GAMEPAD_BUTTON_DOWN, INPUT_TYPE_GAMEPAD)) { moveNew += XMVectorSet(0, 0, -1, 0); }
+				if (wiInputManager::down('E') || wiInputManager::down(GAMEPAD_BUTTON_2, INPUT_TYPE_GAMEPAD)) { moveNew += XMVectorSet(0, 1, 0, 0);	 }
+				if (wiInputManager::down('Q') || wiInputManager::down(GAMEPAD_BUTTON_1, INPUT_TYPE_GAMEPAD)) { moveNew += XMVectorSet(0, -1, 0, 0); }
+				moveNew += XMVector3Normalize(moveNew);
 			}
+			moveNew *= speed;
 
 			move = XMVectorLerp(move, moveNew, 0.18f * clampedDT / 0.0166f); // smooth the movement a bit
 			float moveLength = XMVectorGetX(XMVector3Length(move));
@@ -831,9 +840,10 @@ void EditorComponent::Update(float dt)
 				XMStoreFloat3(&vec, V);
 				cameraWnd->camera_target.Translate(vec);
 			}
-			else if (wiInputManager::down(VK_LCONTROL))
+			else if (wiInputManager::down(VK_LCONTROL) || currentMouse.z != 0.0f)
 			{
-				cameraWnd->camera_transform.Translate(XMFLOAT3(0, 0, yDif * 4));
+				cameraWnd->camera_transform.Translate(XMFLOAT3(0, 0, yDif * 4 + currentMouse.z));
+				cameraWnd->camera_transform.translation_local.z = std::min(0.0f, cameraWnd->camera_transform.translation_local.z);
 				camera.SetDirty();
 			}
 			else if(abs(xDif) + abs(yDif) > 0)
@@ -850,12 +860,12 @@ void EditorComponent::Update(float dt)
 		UINT pickMask = rendererWnd->GetPickType();
 		RAY pickRay = wiRenderer::GetPickRay((long)currentMouse.x, (long)currentMouse.y);
 		{
-			hovered = wiRenderer::RayIntersectWorldResult();
+			hovered = wiSceneSystem::PickResult();
 
 			// Try to pick objects-meshes:
 			if (pickMask & PICK_OBJECT)
 			{
-				hovered = wiRenderer::RayIntersectWorld(pickRay, pickMask);
+				hovered = wiSceneSystem::Pick(pickRay, pickMask);
 			}
 
 			if (pickMask & PICK_LIGHT)
@@ -869,7 +879,7 @@ void EditorComponent::Update(float dt)
 					float dis = XMVectorGetX(disV);
 					if (dis < wiMath::Distance(transform.GetPosition(), pickRay.origin) * 0.05f && dis < hovered.distance)
 					{
-						hovered = wiRenderer::RayIntersectWorldResult();
+						hovered = wiSceneSystem::PickResult();
 						hovered.entity = entity;
 						hovered.distance = dis;
 					}
@@ -886,7 +896,7 @@ void EditorComponent::Update(float dt)
 					float dis = XMVectorGetX(disV);
 					if (dis < wiMath::Distance(transform.GetPosition(), pickRay.origin) * 0.05f && dis < hovered.distance)
 					{
-						hovered = wiRenderer::RayIntersectWorldResult();
+						hovered = wiSceneSystem::PickResult();
 						hovered.entity = entity;
 						hovered.distance = dis;
 					}
@@ -903,7 +913,7 @@ void EditorComponent::Update(float dt)
 					float dis = XMVectorGetX(disV);
 					if (dis < wiMath::Distance(transform.GetPosition(), pickRay.origin) * 0.05f && dis < hovered.distance)
 					{
-						hovered = wiRenderer::RayIntersectWorldResult();
+						hovered = wiSceneSystem::PickResult();
 						hovered.entity = entity;
 						hovered.distance = dis;
 					}
@@ -920,7 +930,7 @@ void EditorComponent::Update(float dt)
 					float dis = XMVectorGetX(disV);
 					if (dis < wiMath::Distance(transform.GetPosition(), pickRay.origin) * 0.05f && dis < hovered.distance)
 					{
-						hovered = wiRenderer::RayIntersectWorldResult();
+						hovered = wiSceneSystem::PickResult();
 						hovered.entity = entity;
 						hovered.distance = dis;
 					}
@@ -937,7 +947,7 @@ void EditorComponent::Update(float dt)
 					float dis = XMVectorGetX(disV);
 					if (dis < wiMath::Distance(transform.GetPosition(), pickRay.origin) * 0.05f && dis < hovered.distance)
 					{
-						hovered = wiRenderer::RayIntersectWorldResult();
+						hovered = wiSceneSystem::PickResult();
 						hovered.entity = entity;
 						hovered.distance = dis;
 					}
@@ -955,7 +965,7 @@ void EditorComponent::Update(float dt)
 						float dis = wiMath::Distance(transform.GetPosition(), pickRay.origin);
 						if (dis < hovered.distance)
 						{
-							hovered = wiRenderer::RayIntersectWorldResult();
+							hovered = wiSceneSystem::PickResult();
 							hovered.entity = entity;
 							hovered.distance = dis;
 						}
@@ -974,7 +984,7 @@ void EditorComponent::Update(float dt)
 					float dis = XMVectorGetX(disV);
 					if (dis < wiMath::Distance(transform.GetPosition(), pickRay.origin) * 0.05f && dis < hovered.distance)
 					{
-						hovered = wiRenderer::RayIntersectWorldResult();
+						hovered = wiSceneSystem::PickResult();
 						hovered.entity = entity;
 						hovered.distance = dis;
 					}
@@ -991,7 +1001,7 @@ void EditorComponent::Update(float dt)
 					float dis = XMVectorGetX(disV);
 					if (dis < wiMath::Distance(transform.GetPosition(), pickRay.origin) * 0.05f && dis < hovered.distance)
 					{
-						hovered = wiRenderer::RayIntersectWorldResult();
+						hovered = wiSceneSystem::PickResult();
 						hovered.entity = entity;
 						hovered.distance = dis;
 					}
@@ -1116,7 +1126,7 @@ void EditorComponent::Update(float dt)
 				{
 					Entity entity = scene.names.GetEntity(i);
 
-					wiRenderer::RayIntersectWorldResult picked;
+					wiSceneSystem::PickResult picked;
 					picked.entity = entity;
 					AddSelected(picked);
 				}
@@ -1130,9 +1140,9 @@ void EditorComponent::Update(float dt)
 				if (!selected.empty() && wiInputManager::down(VK_LSHIFT))
 				{
 					// Union selection:
-					list<wiRenderer::RayIntersectWorldResult> saved = selected;
+					list<wiSceneSystem::PickResult> saved = selected;
 					EndTranslate();
-					for (const wiRenderer::RayIntersectWorldResult& picked : saved)
+					for (const wiSceneSystem::PickResult& picked : saved)
 					{
 						AddSelected(picked);
 					}
@@ -1184,7 +1194,7 @@ void EditorComponent::Update(float dt)
 		}
 		else
 		{
-			const wiRenderer::RayIntersectWorldResult& picked = selected.back();
+			const wiSceneSystem::PickResult& picked = selected.back();
 
 			assert(picked.entity != INVALID_ENTITY);
 
@@ -1273,7 +1283,7 @@ void EditorComponent::Update(float dt)
 				*clipboard >> count;
 				for (size_t i = 0; i < count; ++i)
 				{
-					wiRenderer::RayIntersectWorldResult picked;
+					wiSceneSystem::PickResult picked;
 					picked.entity = scene.Entity_Serialize(*clipboard, INVALID_ENTITY, wiRandom::getRandom(1, INT_MAX), false);
 					AddSelected(picked);
 				}
@@ -1287,7 +1297,7 @@ void EditorComponent::Update(float dt)
 				EndTranslate();
 				for (auto& x : prevSel)
 				{
-					wiRenderer::RayIntersectWorldResult picked;
+					wiSceneSystem::PickResult picked;
 					picked.entity = scene.Entity_Duplicate(x.entity);
 					AddSelected(picked);
 				}
@@ -1339,10 +1349,6 @@ void EditorComponent::Update(float dt)
 	emitterWnd->UpdateData();
 	hairWnd->UpdateData();
 
-	__super::Update(dt);
-
-	renderPath->Update(dt);
-
 	// Follow camera proxy:
 	if (cameraWnd->followCheckBox->IsEnabled() && cameraWnd->followCheckBox->GetCheck())
 	{
@@ -1356,10 +1362,14 @@ void EditorComponent::Update(float dt)
 
 	camera.TransformCamera(cameraWnd->camera_transform);
 	camera.UpdateCamera();
+
+	__super::Update(dt);
+
+	renderPath->Update(dt);
 }
-void EditorComponent::Render()
+void EditorComponent::Render() const
 {
-	Scene& scene = wiRenderer::GetScene();
+	Scene& scene = wiSceneSystem::GetScene();
 
 	// Hovered item boxes:
 	if (!cinemaModeCheckBox->GetCheck())
@@ -1416,7 +1426,7 @@ void EditorComponent::Render()
 	// Selected items box:
 	if (!cinemaModeCheckBox->GetCheck() && !selected.empty())
 	{
-		AABB selectedAABB = AABB(XMFLOAT3(FLOAT32_MAX, FLOAT32_MAX, FLOAT32_MAX),XMFLOAT3(-FLOAT32_MAX, -FLOAT32_MAX, -FLOAT32_MAX));
+		AABB selectedAABB = AABB(XMFLOAT3(FLT_MAX, FLT_MAX, FLT_MAX), XMFLOAT3(-FLT_MAX, -FLT_MAX, -FLT_MAX));
 		for (auto& picked : selected)
 		{
 			if (picked.entity != INVALID_ENTITY)
@@ -1473,7 +1483,7 @@ void EditorComponent::Render()
 	__super::Render();
 
 }
-void EditorComponent::Compose()
+void EditorComponent::Compose() const
 {
 	renderPath->Compose();
 
@@ -1484,7 +1494,7 @@ void EditorComponent::Compose()
 
 	const CameraComponent& camera = wiRenderer::GetCamera();
 
-	Scene& scene = wiRenderer::GetScene();
+	Scene& scene = wiSceneSystem::GetScene();
 
 	if (rendererWnd->GetPickType() & PICK_LIGHT)
 	{
@@ -1746,6 +1756,8 @@ void EditorComponent::Compose()
 	{
 		translator.Draw(camera, GRAPHICSTHREAD_IMMEDIATE);
 	}
+
+	__super::Compose();
 }
 void EditorComponent::Unload()
 {
@@ -1763,7 +1775,7 @@ void EditorComponent::BeginTranslate()
 		return;
 	}
 
-	Scene& scene = wiRenderer::GetScene();
+	Scene& scene = wiSceneSystem::GetScene();
 
 	// Insert translator into scene:
 	scene.transforms.Create(translator.entityID);
@@ -1772,7 +1784,7 @@ void EditorComponent::BeginTranslate()
 	savedHierarchy.Copy(scene.hierarchy);
 
 	// All selected entities will be attached to translator entity:
-	TransformComponent* translator_transform = wiRenderer::GetScene().transforms.GetComponent(translator.entityID);
+	TransformComponent* translator_transform = wiSceneSystem::GetScene().transforms.GetComponent(translator.entityID);
 	translator_transform->ClearTransform();
 
 	// Find the center of all the entities that are selected:
@@ -1780,7 +1792,7 @@ void EditorComponent::BeginTranslate()
 	float count = 0;
 	for (auto& x : selected)
 	{
-		TransformComponent* transform = wiRenderer::GetScene().transforms.GetComponent(x.entity);
+		TransformComponent* transform = wiSceneSystem::GetScene().transforms.GetComponent(x.entity);
 		if (transform != nullptr)
 		{
 			centerV = XMVectorAdd(centerV, transform->GetPositionV());
@@ -1800,7 +1812,7 @@ void EditorComponent::BeginTranslate()
 
 		for (auto& x : selected)
 		{
-			wiRenderer::GetScene().Component_Attach(x.entity, translator.entityID);
+			wiSceneSystem::GetScene().Component_Attach(x.entity, translator.entityID);
 		}
 	}
 }
@@ -1811,7 +1823,7 @@ void EditorComponent::EndTranslate()
 		return;
 	}
 
-	Scene& scene = wiRenderer::GetScene();
+	Scene& scene = wiSceneSystem::GetScene();
 
 	// Remove translator from scene:
 	scene.Entity_Remove(translator.entityID);
@@ -1837,7 +1849,7 @@ void EditorComponent::EndTranslate()
 
 	// If an attached entity got moved, then the world transform was applied to it (**),
 	//	so we need to reattach it properly to the parent matrix:
-	for (const wiRenderer::RayIntersectWorldResult& x : selected)
+	for (const wiSceneSystem::PickResult& x : selected)
 	{
 		HierarchyComponent* parent = scene.hierarchy.GetComponent(x.entity);
 		if (parent != nullptr)
@@ -1861,7 +1873,7 @@ void EditorComponent::EndTranslate()
 
 	selected.clear();
 }
-void EditorComponent::AddSelected(const wiRenderer::RayIntersectWorldResult& picked)
+void EditorComponent::AddSelected(const wiSceneSystem::PickResult& picked)
 {
 	for (auto it = selected.begin(); it != selected.end(); ++it)
 	{
@@ -1926,7 +1938,7 @@ void EditorComponent::ConsumeHistoryOperation(bool undo)
 				*archive >> start >> end;
 				translator.enabled = true;
 
-				Scene& scene = wiRenderer::GetScene();
+				Scene& scene = wiSceneSystem::GetScene();
 
 				TransformComponent& transform = *scene.transforms.GetComponent(translator.entityID);
 				transform.ClearTransform();
@@ -1942,7 +1954,7 @@ void EditorComponent::ConsumeHistoryOperation(bool undo)
 			break;
 		case HISTORYOP_DELETE:
 			{
-				Scene& scene = wiRenderer::GetScene();
+				Scene& scene = wiSceneSystem::GetScene();
 
 				size_t count;
 				*archive >> count;
@@ -1975,12 +1987,12 @@ void EditorComponent::ConsumeHistoryOperation(bool undo)
 
 				// Read selections states from archive:
 
-				list<wiRenderer::RayIntersectWorldResult> selectedBEFORE;
+				list<wiSceneSystem::PickResult> selectedBEFORE;
 				size_t selectionCountBEFORE;
 				*archive >> selectionCountBEFORE;
 				for (size_t i = 0; i < selectionCountBEFORE; ++i)
 				{
-					wiRenderer::RayIntersectWorldResult sel;
+					wiSceneSystem::PickResult sel;
 					*archive >> sel.entity;
 					*archive >> sel.position;
 					*archive >> sel.normal;
@@ -1992,12 +2004,12 @@ void EditorComponent::ConsumeHistoryOperation(bool undo)
 				ComponentManager<HierarchyComponent> savedHierarchyBEFORE;
 				savedHierarchyBEFORE.Serialize(*archive);
 
-				list<wiRenderer::RayIntersectWorldResult> selectedAFTER;
+				list<wiSceneSystem::PickResult> selectedAFTER;
 				size_t selectionCountAFTER;
 				*archive >> selectionCountAFTER;
 				for (size_t i = 0; i < selectionCountAFTER; ++i)
 				{
-					wiRenderer::RayIntersectWorldResult sel;
+					wiSceneSystem::PickResult sel;
 					*archive >> sel.entity;
 					*archive >> sel.position;
 					*archive >> sel.normal;

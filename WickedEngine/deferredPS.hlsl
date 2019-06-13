@@ -9,19 +9,16 @@
 
 float4 main(VertexToPixelPostProcess PSIn) : SV_TARGET
 {
-	float4 color = texture_gbuffer0[uint2(PSIn.pos.xy)];
-
-	float4 g2 = texture_gbuffer2[int2(PSIn.pos.xy)];
-	float roughness = g2.x;
-	float reflectance = g2.y;
-	float metalness = g2.z;
-	float3 albedo = ComputeAlbedo(color, metalness, reflectance);
+	float4 g0 = texture_gbuffer0[PSIn.pos.xy];
+	float4 g2 = texture_gbuffer2[PSIn.pos.xy];
+	float3 albedo = ComputeAlbedo(float4(g0.rgb, 1), g2.b, g2.a);
 
 	float  depth = texture_lineardepth[(uint2)PSIn.pos.xy].r * g_xFrame_MainCamera_ZFarP;
 
-	float4 diffuse = texture_0[uint2(PSIn.pos.xy)]; // light diffuse
-	float4 specular = texture_1[uint2(PSIn.pos.xy)]; // light specular
-	color.rgb = diffuse.rgb * albedo + specular.rgb;
+	float3 diffuse = texture_0[uint2(PSIn.pos.xy)].rgb; // light diffuse
+	float3 specular = texture_1[uint2(PSIn.pos.xy)].rgb; // light specular
+
+	float4 color = float4(albedo * diffuse + specular, 1);
 
 	ApplyFog(depth, color);
 

@@ -13,14 +13,11 @@ namespace wiSceneSystem
 	{
 		if (archive.IsReadMode())
 		{
-			std::string tmp;
-			archive >> tmp;
-			*this = tmp;
+			archive >> name;
 		}
 		else
 		{
-			std::string tmp = name;
-			archive << tmp;
+			archive << name;
 		}
 	}
 	void LayerComponent::Serialize(wiArchive& archive, uint32_t seed)
@@ -83,13 +80,20 @@ namespace wiSceneSystem
 			archive >> _flags;
 			archive >> (uint8_t&)engineStencilRef;
 			archive >> userStencilRef;
-			archive >> (uint8_t&)blendMode;
+			archive >> (uint8_t&)userBlendMode;
 			archive >> baseColor;
+			if (archive.GetVersion() >= 25)
+			{
+				archive >> emissiveColor;
+			}
 			archive >> texMulAdd;
 			archive >> roughness;
 			archive >> reflectance;
 			archive >> metalness;
-			archive >> emissive;
+			if (archive.GetVersion() < 25)
+			{
+				archive >> emissiveColor.w;
+			}
 			archive >> refractionIndex;
 			archive >> subsurfaceScattering;
 			archive >> normalMapStrength;
@@ -104,23 +108,50 @@ namespace wiSceneSystem
 			archive >> normalMapName;
 			archive >> displacementMapName;
 
+			if (archive.GetVersion() >= 24)
+			{
+				archive >> emissiveMapName;
+			}
+
+			if (archive.GetVersion() >= 28)
+			{
+				archive >> occlusionMapName;
+
+				archive >> uvset_baseColorMap;
+				archive >> uvset_surfaceMap;
+				archive >> uvset_normalMap;
+				archive >> uvset_displacementMap;
+				archive >> uvset_emissiveMap;
+				archive >> uvset_occlusionMap;
+
+				archive >> displacementMapping;
+			}
+
 			SetDirty();
 
 			if (!baseColorMapName.empty())
 			{
-				baseColorMap = (wiGraphicsTypes::Texture2D*)wiResourceManager::GetGlobal().add(dir + baseColorMapName);
+				baseColorMap = (wiGraphics::Texture2D*)wiResourceManager::GetGlobal().add(dir + baseColorMapName);
 			}
 			if (!surfaceMapName.empty())
 			{
-				surfaceMap = (wiGraphicsTypes::Texture2D*)wiResourceManager::GetGlobal().add(dir + surfaceMapName);
+				surfaceMap = (wiGraphics::Texture2D*)wiResourceManager::GetGlobal().add(dir + surfaceMapName);
 			}
 			if (!normalMapName.empty())
 			{
-				normalMap = (wiGraphicsTypes::Texture2D*)wiResourceManager::GetGlobal().add(dir + normalMapName);
+				normalMap = (wiGraphics::Texture2D*)wiResourceManager::GetGlobal().add(dir + normalMapName);
 			}
 			if (!displacementMapName.empty())
 			{
-				displacementMap = (wiGraphicsTypes::Texture2D*)wiResourceManager::GetGlobal().add(dir + displacementMapName);
+				displacementMap = (wiGraphics::Texture2D*)wiResourceManager::GetGlobal().add(dir + displacementMapName);
+			}
+			if (!emissiveMapName.empty())
+			{
+				emissiveMap = (wiGraphics::Texture2D*)wiResourceManager::GetGlobal().add(dir + emissiveMapName);
+			}
+			if (!occlusionMapName.empty())
+			{
+				occlusionMap = (wiGraphics::Texture2D*)wiResourceManager::GetGlobal().add(dir + occlusionMapName);
 			}
 
 		}
@@ -129,13 +160,20 @@ namespace wiSceneSystem
 			archive << _flags;
 			archive << (uint8_t)engineStencilRef;
 			archive << userStencilRef;
-			archive << (uint8_t)blendMode;
+			archive << (uint8_t)userBlendMode;
 			archive << baseColor;
+			if (archive.GetVersion() >= 25)
+			{
+				archive << emissiveColor;
+			}
 			archive << texMulAdd;
 			archive << roughness;
 			archive << reflectance;
 			archive << metalness;
-			archive << emissive;
+			if (archive.GetVersion() < 25)
+			{
+				archive << emissiveColor.w;
+			}
 			archive << refractionIndex;
 			archive << subsurfaceScattering;
 			archive << normalMapStrength;
@@ -170,12 +208,37 @@ namespace wiSceneSystem
 				{
 					displacementMapName = displacementMapName.substr(found + dir.length());
 				}
+
+				found = emissiveMapName.rfind(dir);
+				if (found != std::string::npos)
+				{
+					emissiveMapName = emissiveMapName.substr(found + dir.length());
+				}
 			}
 
 			archive << baseColorMapName;
 			archive << surfaceMapName;
 			archive << normalMapName;
 			archive << displacementMapName;
+
+			if (archive.GetVersion() >= 24)
+			{
+				archive << emissiveMapName;
+			}
+
+			if (archive.GetVersion() >= 28)
+			{
+				archive << occlusionMapName;
+
+				archive << uvset_baseColorMap;
+				archive << uvset_surfaceMap;
+				archive << uvset_normalMap;
+				archive << uvset_displacementMap;
+				archive << uvset_emissiveMap;
+				archive << uvset_occlusionMap;
+
+				archive << displacementMapping;
+			}
 		}
 	}
 	void MeshComponent::Serialize(wiArchive& archive, uint32_t seed)
@@ -186,7 +249,7 @@ namespace wiSceneSystem
 			archive >> _flags;
 			archive >> vertex_positions;
 			archive >> vertex_normals;
-			archive >> vertex_texcoords;
+			archive >> vertex_uvset_0;
 			archive >> vertex_boneindices;
 			archive >> vertex_boneweights;
 			archive >> vertex_atlas;
@@ -206,6 +269,11 @@ namespace wiSceneSystem
 			archive >> tessellationFactor;
 			SerializeEntity(archive, armatureID, seed);
 
+			if (archive.GetVersion() >= 28)
+			{
+				archive >> vertex_uvset_1;
+			}
+
 			CreateRenderData();
 		}
 		else
@@ -213,7 +281,7 @@ namespace wiSceneSystem
 			archive << _flags;
 			archive << vertex_positions;
 			archive << vertex_normals;
-			archive << vertex_texcoords;
+			archive << vertex_uvset_0;
 			archive << vertex_boneindices;
 			archive << vertex_boneweights;
 			archive << vertex_atlas;
@@ -230,6 +298,11 @@ namespace wiSceneSystem
 
 			archive << tessellationFactor;
 			SerializeEntity(archive, armatureID, seed);
+
+			if (archive.GetVersion() >= 28)
+			{
+				archive << vertex_uvset_1;
+			}
 
 		}
 	}
@@ -342,7 +415,17 @@ namespace wiSceneSystem
 			}
 
 			archive >> inverseBindMatrices;
-			archive >> remapMatrix;
+
+			if (archive.GetVersion() < 26)
+			{
+				XMFLOAT4X4 remapMatrix;
+				archive >> remapMatrix; // no longer used
+			}
+			if (archive.GetVersion() == 26)
+			{
+				Entity rootBoneID;
+				SerializeEntity(archive, rootBoneID, seed);
+			}
 		}
 		else
 		{
@@ -356,7 +439,11 @@ namespace wiSceneSystem
 			}
 
 			archive << inverseBindMatrices;
-			archive << remapMatrix;
+			if (archive.GetVersion() == 26)
+			{
+				Entity rootBoneID;
+				SerializeEntity(archive, rootBoneID, seed);
+			}
 		}
 	}
 	void LightComponent::Serialize(wiArchive& archive, uint32_t seed)
@@ -367,7 +454,7 @@ namespace wiSceneSystem
 			archive >> color;
 			archive >> (uint32_t&)type;
 			archive >> energy;
-			archive >> range;
+			archive >> range_local;
 			archive >> fov;
 			archive >> shadowBias;
 			archive >> radius;
@@ -382,7 +469,7 @@ namespace wiSceneSystem
 			archive << color;
 			archive << (uint32_t&)type;
 			archive << energy;
-			archive << range;
+			archive << range_local;
 			archive << fov;
 			archive << shadowBias;
 			archive << radius;
@@ -435,14 +522,14 @@ namespace wiSceneSystem
 			archive >> _flags;
 			archive >> type;
 			archive >> gravity;
-			archive >> range;
+			archive >> range_local;
 		}
 		else
 		{
 			archive << _flags;
 			archive << type;
 			archive << gravity;
-			archive << range;
+			archive << range_local;
 		}
 	}
 	void DecalComponent::Serialize(wiArchive& archive, uint32_t seed)

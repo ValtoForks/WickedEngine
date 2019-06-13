@@ -8,20 +8,25 @@
 #include <fstream>
 
 using namespace std;
-using namespace wiGraphicsTypes;
+using namespace wiGraphics;
 using namespace wiSceneSystem;
 using namespace wiECS;
 
 // Transform the data from OBJ space to engine-space:
 static const bool transform_to_LH = true;
 
-void ImportModel_OBJ(const std::string& fileName)
+template <class T>
+inline void hash_combine(std::size_t& seed, const T& v)
+{
+	std::hash<T> hasher;
+	seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+void ImportModel_OBJ(const std::string& fileName, Scene& scene)
 {
 	string directory, name;
 	wiHelper::SplitPath(fileName, directory, name);
 	wiHelper::RemoveExtensionFromFileName(name);
-
-	Scene scene;
 
 	tinyobj::attrib_t obj_attrib;
 	vector<tinyobj::shape_t> obj_shapes;
@@ -47,7 +52,10 @@ void ImportModel_OBJ(const std::string& fileName)
 			material.baseColor = XMFLOAT4(obj_material.diffuse[0], obj_material.diffuse[1], obj_material.diffuse[2], 1);
 			material.baseColorMapName = obj_material.diffuse_texname;
 			material.displacementMapName = obj_material.displacement_texname;
-			material.emissive = max(obj_material.emission[0], max(obj_material.emission[1], obj_material.emission[2]));
+			material.emissiveColor.x = obj_material.emission[0];
+			material.emissiveColor.y = obj_material.emission[1];
+			material.emissiveColor.z = obj_material.emission[2];
+			material.emissiveColor.w = max(obj_material.emission[0], max(obj_material.emission[1], obj_material.emission[2]));
 			material.refractionIndex = obj_material.ior;
 			material.metalness = obj_material.metallic;
 			material.normalMapName = obj_material.normal_texname;
@@ -163,20 +171,18 @@ void ImportModel_OBJ(const std::string& fileName)
 					}
 
 					// eliminate duplicate vertices by means of hashing:
-					size_t hashes[] = {
-						hash<int>{}(index.vertex_index),
-						hash<int>{}(index.normal_index),
-						hash<int>{}(index.texcoord_index),
-						hash<int>{}(materialIndex),
-					};
-					size_t vertexHash = (((hashes[0] ^ (hashes[1] << 1) >> 1) ^ (hashes[2] << 1)) >> 1) ^ (hashes[3] << 1);
+					size_t vertexHash = 0;
+					hash_combine(vertexHash, index.vertex_index);
+					hash_combine(vertexHash, index.normal_index);
+					hash_combine(vertexHash, index.texcoord_index);
+					hash_combine(vertexHash, materialIndex);
 
 					if (uniqueVertices.count(vertexHash) == 0)
 					{
 						uniqueVertices[vertexHash] = (uint32_t)mesh.vertex_positions.size();
 						mesh.vertex_positions.push_back(pos);
 						mesh.vertex_normals.push_back(nor);
-						mesh.vertex_texcoords.push_back(tex);
+						mesh.vertex_uvset_0.push_back(tex);
 					}
 					mesh.indices.push_back(uniqueVertices[vertexHash]);
 					mesh.subsets.back().indexCount++;
@@ -185,7 +191,8 @@ void ImportModel_OBJ(const std::string& fileName)
 			mesh.CreateRenderData();
 		}
 
-		wiRenderer::GetScene().Merge(scene);
+		scene.Update(0);
+
 	}
 	else
 	{

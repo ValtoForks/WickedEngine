@@ -5,8 +5,9 @@
 #include "tracedRenderingHF.hlsli"
 #include "raySceneIntersectHF.hlsli"
 
-RAWBUFFER(counterBuffer_READ, TEXSLOT_UNIQUE0);
-STRUCTUREDBUFFER(rayBuffer_READ, TracedRenderingStoredRay, TEXSLOT_UNIQUE1);
+RAWBUFFER(counterBuffer_READ, TEXSLOT_ONDEMAND7);
+STRUCTUREDBUFFER(rayIndexBuffer_READ, uint, TEXSLOT_ONDEMAND8);
+STRUCTUREDBUFFER(rayBuffer_READ, TracedRenderingStoredRay, TEXSLOT_ONDEMAND9);
 
 RWTEXTURE2D(resultTexture, float4, 0);
 
@@ -20,7 +21,7 @@ void main( uint3 DTid : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 	if (DTid.x < counterBuffer_READ.Load(0))
 	{
 		// Load the current ray:
-		LoadRay(rayBuffer_READ[DTid.x], ray, pixelID);
+		LoadRay(rayBuffer_READ[rayIndexBuffer_READ[DTid.x]], ray, pixelID);
 
 		// Compute real pixel coords from flattened:
 		uint2 coords2D = unflatten2D(pixelID, GetInternalResolution());
@@ -34,7 +35,7 @@ void main( uint3 DTid : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 
 		float3 finalResult = 0;
 
-		BVHMeshTriangle tri = triangleBuffer[ray.primitiveID];
+		TriangleData tri = TriangleData_Unpack(primitiveBuffer[ray.primitiveID], primitiveDataBuffer[ray.primitiveID]);
 
 		float u = ray.bary.x;
 		float v = ray.bary.y;
@@ -43,33 +44,68 @@ void main( uint3 DTid : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 		float3 P = ray.origin;
 		float3 N = normalize(tri.n0 * w + tri.n1 * u + tri.n2 * v);
 		float3 V = normalize(g_xFrame_MainCamera_CamPos - P);
-		float2 UV = tri.t0 * w + tri.t1 * u + tri.t2 * v;
+		float4 uvsets = tri.u0 * w + tri.u1 * u + tri.u2 * v;
+		float4 color = tri.c0 * w + tri.c1 * u + tri.c2 * v;
 
 
 		uint materialIndex = tri.materialIndex;
 
-		TracedRenderingMaterial mat = materialBuffer[materialIndex];
+		TracedRenderingMaterial material = materialBuffer[materialIndex];
 
-		UV = frac(UV); // emulate wrap
-		float4 baseColorMap = materialTextureAtlas.SampleLevel(sampler_linear_clamp, UV * mat.baseColorAtlasMulAdd.xy + mat.baseColorAtlasMulAdd.zw, 0);
-		float4 surfaceMap = materialTextureAtlas.SampleLevel(sampler_linear_clamp, UV * mat.surfaceMapAtlasMulAdd.xy + mat.surfaceMapAtlasMulAdd.zw, 0);
-		float4 normalMap = materialTextureAtlas.SampleLevel(sampler_linear_clamp, UV * mat.normalMapAtlasMulAdd.xy + mat.normalMapAtlasMulAdd.zw, 0);
+		uvsets = frac(uvsets); // emulate wrap
 
-		float4 baseColor = DEGAMMA(mat.baseColor * baseColorMap);
-		float reflectance = mat.reflectance * surfaceMap.r;
-		float metalness = mat.metalness * surfaceMap.g;
-		float emissive = mat.emissive * surfaceMap.b;
-		float roughness = mat.roughness * normalMap.a;
-		float sss = mat.subsurfaceScattering;
+		float4 baseColor;
+		[branch]
+		if (material.uvset_baseColorMap >= 0)
+		{
+			const float2 UV_baseColorMap = material.uvset_baseColorMap == 0 ? uvsets.xy : uvsets.zw;
+			baseColor = materialTextureAtlas.SampleLevel(sampler_linear_clamp, UV_baseColorMap * material.baseColorAtlasMulAdd.xy + material.baseColorAtlasMulAdd.zw, 0);
+			baseColor = DEGAMMA(baseColor);
+		}
+		else
+		{
+			baseColor = 1;
+		}
+		baseColor *= color;
 
-		Surface surface = CreateSurface(P, N, V, baseColor, roughness, reflectance, metalness, emissive, sss);
+		float4 surface_occlusion_roughness_metallic_reflectance;
+		[branch]
+		if (material.uvset_surfaceMap >= 0)
+		{
+			const float2 UV_surfaceMap = material.uvset_surfaceMap == 0 ? uvsets.xy : uvsets.zw;
+			surface_occlusion_roughness_metallic_reflectance = materialTextureAtlas.SampleLevel(sampler_linear_clamp, UV_surfaceMap * material.surfaceMapAtlasMulAdd.xy + material.surfaceMapAtlasMulAdd.zw, 0);
+			if (material.specularGlossinessWorkflow)
+			{
+				ConvertToSpecularGlossiness(surface_occlusion_roughness_metallic_reflectance);
+			}
+		}
+		else
+		{
+			surface_occlusion_roughness_metallic_reflectance = 1;
+		}
+
+		[branch]
+		if (material.uvset_normalMap >= 0)
+		{
+			const float2 UV_normalMap = material.uvset_normalMap == 0 ? uvsets.xy : uvsets.zw;
+			float3 normalMap = materialTextureAtlas.SampleLevel(sampler_linear_clamp, UV_normalMap * material.normalMapAtlasMulAdd.xy + material.normalMapAtlasMulAdd.zw, 0).rgb;
+			normalMap = normalMap.rgb * 2 - 1;
+			normalMap.g *= material.normalMapFlip;
+			const float3x3 TBN = float3x3(tri.tangent, tri.binormal, N);
+			N = normalize(lerp(N, mul(normalMap, TBN), material.normalMapStrength));
+		}
+
+		float roughness = material.roughness * surface_occlusion_roughness_metallic_reflectance.g;
+		float metalness = material.metalness * surface_occlusion_roughness_metallic_reflectance.b;
+		float reflectance = material.reflectance * surface_occlusion_roughness_metallic_reflectance.a;
+
+		Surface surface = CreateSurface(P, N, V, baseColor, 1, roughness, metalness, reflectance);
 
 		[loop]
 		for (uint iterator = 0; iterator < g_xFrame_LightArrayCount; iterator++)
 		{
 			ShaderEntityType light = EntityArray[g_xFrame_LightArrayOffset + iterator];
-
-			LightingResult result = (LightingResult)0;
+			Lighting lighting = CreateLighting(0, 0, 0, 0);
 		
 			float3 L = 0;
 			float dist = 0;
@@ -85,8 +121,8 @@ void main( uint3 DTid : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 				L = light.directionWS.xyz;
 				SurfaceToLight surfaceToLight = CreateSurfaceToLight(surface, L);
 
-				result.specular = lightColor * BRDF_GetSpecular(surface, surfaceToLight);
-				result.diffuse = lightColor * BRDF_GetDiffuse(surface, surfaceToLight);
+				lighting.direct.specular = lightColor * BRDF_GetSpecular(surface, surfaceToLight);
+				lighting.direct.diffuse = lightColor * BRDF_GetDiffuse(surface, surfaceToLight);
 			}
 			break;
 			case ENTITY_TYPE_POINTLIGHT:
@@ -104,15 +140,15 @@ void main( uint3 DTid : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 
 					SurfaceToLight surfaceToLight = CreateSurfaceToLight(surface, L);
 
-					result.specular = lightColor * BRDF_GetSpecular(surface, surfaceToLight);
-					result.diffuse = lightColor * BRDF_GetDiffuse(surface, surfaceToLight);
+					lighting.direct.specular = lightColor * BRDF_GetSpecular(surface, surfaceToLight);
+					lighting.direct.diffuse = lightColor * BRDF_GetDiffuse(surface, surfaceToLight);
 
 					const float range2 = light.range * light.range;
 					const float att = saturate(1.0 - (dist2 / range2));
 					const float attenuation = att * att;
 
-					result.diffuse *= attenuation;
-					result.specular *= attenuation;
+					lighting.direct.diffuse *= attenuation;
+					lighting.direct.specular *= attenuation;
 				}
 			}
 			break;
@@ -137,16 +173,16 @@ void main( uint3 DTid : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 					{
 						SurfaceToLight surfaceToLight = CreateSurfaceToLight(surface, L);
 
-						result.specular = lightColor * BRDF_GetSpecular(surface, surfaceToLight);
-						result.diffuse = lightColor * BRDF_GetDiffuse(surface, surfaceToLight);
+						lighting.direct.specular = lightColor * BRDF_GetSpecular(surface, surfaceToLight);
+						lighting.direct.diffuse = lightColor * BRDF_GetDiffuse(surface, surfaceToLight);
 
 						const float range2 = light.range * light.range;
 						const float att = saturate(1.0 - (dist2 / range2));
 						float attenuation = att * att;
 						attenuation *= saturate((1.0 - (1.0 - SpotFactor) * 1.0 / (1.0 - spotCutOff)));
 
-						result.diffuse *= attenuation;
-						result.specular *= attenuation;
+						lighting.direct.diffuse *= attenuation;
+						lighting.direct.specular *= attenuation;
 					}
 				}
 			}
@@ -173,8 +209,8 @@ void main( uint3 DTid : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 		
 			if (NdotL > 0 && dist > 0)
 			{
-				result.diffuse = max(0.0f, result.diffuse);
-				result.specular = max(0.0f, result.specular);
+				lighting.direct.diffuse = max(0.0f, lighting.direct.diffuse);
+				lighting.direct.specular = max(0.0f, lighting.direct.specular);
 
 				Ray newRay;
 				newRay.origin = P;
@@ -182,7 +218,7 @@ void main( uint3 DTid : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 				newRay.direction_inverse = rcp(newRay.direction);
 				newRay.energy = 0;
 				bool hit = TraceSceneANY(newRay, dist);
-				finalResult += (hit ? 0 : NdotL) * (result.diffuse + result.specular);
+				finalResult += (hit ? 0 : NdotL) * (lighting.direct.diffuse + lighting.direct.specular);
 			}
 		}
 		

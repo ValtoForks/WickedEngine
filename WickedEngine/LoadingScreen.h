@@ -1,5 +1,6 @@
 #pragma once
 #include "RenderPath2D.h"
+#include "wiColor.h"
 
 #include <thread>
 #include <functional>
@@ -13,10 +14,10 @@ class LoadingScreen :
 private:
 	struct LoaderTask
 	{
-		std::function< void() > functionBody;
+		std::function<void()> functionBody;
 		std::atomic_bool active;
 
-		LoaderTask(std::function< void() > functionBody) :functionBody(functionBody)
+		LoaderTask(std::function<void()> functionBody) :functionBody(functionBody)
 		{
 			active.store(false);
 		}
@@ -26,7 +27,7 @@ private:
 			active.store(l.active.load());
 		}
 	};
-	std::vector< LoaderTask > loaders;
+	std::vector<LoaderTask> loaders;
 	void doLoadingTasks();
 
 	void waitForFinish();
@@ -40,7 +41,7 @@ public:
 	//use std::bind( YourFunctionPointer )
 	void addLoadingFunction(std::function<void()> loadingFunction);
 	//Helper for loading a whole renderable component
-	void addLoadingComponent(RenderPath* component, MainComponent* main);
+	void addLoadingComponent(RenderPath* component, MainComponent* main, float fadeSeconds = 0, const wiColor& fadeColor = wiColor(0, 0, 0, 255));
 	//Set a function that should be called when the loading finishes
 	//use std::bind( YourFunctionPointer )
 	void onFinished(std::function<void()> finishFunction);
@@ -48,12 +49,12 @@ public:
 	int getPercentageComplete();
 	//See if the loading is currently running
 	bool isActive();
-	
+
 	//Start Executing the tasks and mark the loading as active
 	virtual void Start() override;
 	//Clear all tasks
 	virtual void Stop() override;
-	
+
 	virtual void Unload() override;
 };
 

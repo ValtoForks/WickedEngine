@@ -2,9 +2,109 @@
 #define _SHADERINTEROP_RENDERER_H_
 #include "ShaderInterop.h"
 
+struct ShaderEntityType
+{
+	uint params;
+	float3 positionVS;
+	float range;
+	float3 directionVS;
+	float3 positionWS;
+	float energy;
+	uint color;
+	float3 directionWS;
+	float coneAngleCos;
+	float shadowKernel;
+	float shadowBias;
+	uint userdata;
+	float4 texMulAdd;
+
+	inline uint GetType()
+	{
+		return params & 0xFFFF;
+	}
+	inline uint GetFlags()
+	{
+		return (params >> 16) & 0xFFFF;
+	}
+
+	inline void SetType(uint type)
+	{
+		params = type & 0xFFFF; // also initializes to zero, so flags must be set after the type
+	}
+	inline void SetFlags(uint flags)
+	{
+		params |= (flags & 0xFFFF) << 16;
+	}
+
+	inline void SetShadowIndices(uint shadowMatrixIndex, uint shadowMapIndex)
+	{
+		userdata = shadowMatrixIndex & 0xFFFF;
+		userdata |= (shadowMapIndex & 0xFFFF) << 16;
+	}
+	inline uint GetShadowMatrixIndex()
+	{
+		return userdata & 0xFFFF;
+	}
+	inline uint GetShadowMapIndex()
+	{
+		return (userdata >> 16) & 0xFFFF;
+	}
+	inline bool IsCastingShadow()
+	{
+		return userdata != ~0;
+	}
+
+	// Load uncompressed color:
+	inline float4 GetColor()
+	{
+		float4 fColor;
+
+		fColor.x = (float)((color >> 0) & 0x000000FF) / 255.0f;
+		fColor.y = (float)((color >> 8) & 0x000000FF) / 255.0f;
+		fColor.z = (float)((color >> 16) & 0x000000FF) / 255.0f;
+		fColor.w = (float)((color >> 24) & 0x000000FF) / 255.0f;
+
+		return fColor;
+	}
+
+	// Load area light props:
+	inline float3 GetRight() { return directionWS; }
+	inline float3 GetUp() { return directionVS; }
+	inline float3 GetFront() { return positionVS; }
+	inline float GetRadius() { return texMulAdd.x; }
+	inline float GetWidth() { return texMulAdd.y; }
+	inline float GetHeight() { return texMulAdd.z; }
+
+	// Load decal props:
+	inline float GetEmissive() { return energy; }
+};
+
+static const uint ENTITY_TYPE_DIRECTIONALLIGHT = 0;
+static const uint ENTITY_TYPE_POINTLIGHT = 1;
+static const uint ENTITY_TYPE_SPOTLIGHT = 2;
+static const uint ENTITY_TYPE_SPHERELIGHT = 3;
+static const uint ENTITY_TYPE_DISCLIGHT = 4;
+static const uint ENTITY_TYPE_RECTANGLELIGHT = 5;
+static const uint ENTITY_TYPE_TUBELIGHT = 6;
+static const uint ENTITY_TYPE_DECAL = 100;
+static const uint ENTITY_TYPE_ENVMAP = 101;
+static const uint ENTITY_TYPE_FORCEFIELD_POINT = 200;
+static const uint ENTITY_TYPE_FORCEFIELD_PLANE = 201;
+
+static const uint ENTITY_FLAG_LIGHT_STATIC = 1 << 0;
+
+static const uint SHADER_ENTITY_COUNT = 256;
+static const uint SHADER_ENTITY_TILE_BUCKET_COUNT = SHADER_ENTITY_COUNT / 32;
+
+static const uint MATRIXARRAY_COUNT = 128;
+
+static const uint TILED_CULLING_BLOCKSIZE = 16;
+static const uint TILED_CULLING_THREADSIZE = 8;
+static const uint TILED_CULLING_GRANULARITY = TILED_CULLING_BLOCKSIZE / TILED_CULLING_THREADSIZE;
+
 static const int impostorCaptureAngles = 12;
 
-// ---------- Persistent: -----------------
+// ---------- Common Constant buffers: -----------------
 
 CBUFFER(FrameCB, CBSLOT_RENDERER_FRAME)
 {
@@ -17,9 +117,11 @@ CBUFFER(FrameCB, CBSLOT_RENDERER_FRAME)
 	float		g_xFrame_Gamma;
 	float3		g_xFrame_SunColor;
 
-	float3		g_xFrame_SunDirection; float pad0_WorldCB;
+	float3		g_xFrame_SunDirection;
+	uint		g_xFrame_ShadowCascadeCount;
 
-	float3		g_xFrame_Horizon; float pad1_WorldCB;
+	float3		g_xFrame_Horizon;
+	uint		g_xFrame_ConstantOne;						// Just a constant 1 value as uint (can be used to force disable loop unrolling)
 
 	float3		g_xFrame_Zenith;
 	float		g_xFrame_CloudScale;
@@ -70,7 +172,7 @@ CBUFFER(FrameCB, CBSLOT_RENDERER_FRAME)
 	float		g_xFrame_WindWaveSize;
 
 	float		g_xFrame_WindRandomness;
-	float		pad0_FrameCB;
+	float		g_xFrame_StaticSkyGamma;					// possible values (0: no static sky; 1: hdr static sky; other: actual gamma when ldr)
 	uint		g_xFrame_VoxelRadianceRetargetted;
 	uint		g_xFrame_TemporalAASampleRotation;
 
@@ -113,6 +215,18 @@ CBUFFER(FrameCB, CBSLOT_RENDERER_FRAME)
 	float3		g_xFrame_WorldBoundsExtents_Inverse;	float pad3_frameCB;		// world enclosing AABB 1.0f / abs(max - min)
 };
 
+CBUFFER(APICB, CBSLOT_API)
+{
+	float4		g_xClipPlane;
+	float		g_xAlphaRef;
+	float3		g_xPadding0_APICB;
+};
+
+
+
+
+// ------- On demand Constant buffers: ----------
+
 // The following buffer contains properties for a temporary camera (eg. main camera, reflection camera, shadow camera...)
 CBUFFER(CameraCB, CBSLOT_RENDERER_CAMERA)
 {
@@ -125,15 +239,33 @@ CBUFFER(CameraCB, CBSLOT_RENDERER_CAMERA)
 CBUFFER(MaterialCB, CBSLOT_RENDERER_MATERIAL)
 {
 	float4		g_xMat_baseColor;
+	float4		g_xMat_emissiveColor;
 	float4		g_xMat_texMulAdd;
+
 	float		g_xMat_roughness;
 	float		g_xMat_reflectance;
 	float		g_xMat_metalness;
-	float		g_xMat_emissive;
 	float		g_xMat_refractionIndex;
+
 	float		g_xMat_subsurfaceScattering;
 	float		g_xMat_normalMapStrength;
+	float		g_xMat_normalMapFlip;
 	float		g_xMat_parallaxOcclusionMapping;
+
+	float		g_xMat_displacementMapping;
+	uint		g_xMat_useVertexColors;
+	int			g_xMat_uvset_baseColorMap;
+	int			g_xMat_uvset_surfaceMap;
+
+	int			g_xMat_uvset_normalMap;
+	int			g_xMat_uvset_displacementMap;
+	int			g_xMat_uvset_emissiveMap;
+	int			g_xMat_uvset_occlusionMap;
+
+	uint		g_xMat_specularGlossinessWorkflow;
+	uint		g_xMat_occlusion_primary;
+	uint		g_xMat_occlusion_secondary;
+	uint		g_xMat_padding;
 };
 
 CBUFFER(MiscCB, CBSLOT_RENDERER_MISC)
@@ -142,17 +274,12 @@ CBUFFER(MiscCB, CBSLOT_RENDERER_MISC)
 	float4		g_xColor;
 };
 
-CBUFFER(APICB, CBSLOT_API)
+CBUFFER(ForwardEntityMaskCB, CBSLOT_RENDERER_FORWARD_LIGHTMASK)
 {
-	float4		g_xClipPlane;
-	float		g_xAlphaRef;
-	float3		g_xPadding0_APICB;
+	uint2 xForwardLightMask;	// supports indexind 64 lights
+	uint xForwardDecalMask;		// supports indexing 32 decals
+	uint xForwardEnvProbeMask;	// supports indexing 32 environment probes
 };
-
-
-
-
-// ------- On demand: ----------
 
 CBUFFER(DecalCB, CBSLOT_RENDERER_DECAL)
 {
@@ -193,5 +320,6 @@ CBUFFER(DispatchParamsCB, CBSLOT_RENDERER_DISPATCHPARAMS)
 	uint3	xDispatchParams_numThreads;
 	uint	xDispatchParams_value1;
 };
+
 
 #endif // _SHADERINTEROP_RENDERER_H_

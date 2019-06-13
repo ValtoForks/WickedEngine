@@ -7,23 +7,29 @@ struct wiImageParams;
 
 namespace wiImage
 {
-	void Draw(wiGraphicsTypes::Texture2D* texture, const wiImageParams& params, GRAPHICSTHREAD threadID);
+	void Draw(const wiGraphics::Texture2D* texture, const wiImageParams& params, GRAPHICSTHREAD threadID);
 
-	void DrawDeferred(wiGraphicsTypes::Texture2D* lightmap_diffuse, wiGraphicsTypes::Texture2D* lightmap_specular,
-		wiGraphicsTypes::Texture2D* ao, GRAPHICSTHREAD threadID, int stencilref = 0);
-
-	void BindPersistentState(GRAPHICSTHREAD threadID);
+	void DrawDeferred(
+		const wiGraphics::Texture2D* lightmap_diffuse, 
+		const wiGraphics::Texture2D* lightmap_specular,
+		const wiGraphics::Texture2D* ao, 
+		GRAPHICSTHREAD threadID, 
+		int stencilref = 0);
 
 	void LoadShaders();
 	void Initialize();
 };
 
+// Do not alter order or value because it is bound to lua manually!
 enum STENCILMODE
 {
 	STENCILMODE_DISABLED,
-	STENCILMODE_GREATER,
-	STENCILMODE_LESS,
 	STENCILMODE_EQUAL,
+	STENCILMODE_LESS,
+	STENCILMODE_LESSEQUAL,
+	STENCILMODE_GREATER,
+	STENCILMODE_GREATEREQUAL,
+	STENCILMODE_NOT,
 	STENCILMODE_COUNT
 };
 enum SAMPLEMODE
@@ -53,10 +59,11 @@ struct wiImageParams
 	{
 		EMPTY = 0,
 		DRAWRECT = 1 << 0,
-		MIRROR = 1 << 1,
-		EXTRACT_NORMALMAP = 1 << 2,
-		HDR = 1 << 3,
-		FULLSCREEN = 1 << 4,
+		DRAWRECT2 = 1 << 1,
+		MIRROR = 1 << 2,
+		EXTRACT_NORMALMAP = 1 << 3,
+		HDR = 1 << 4,
+		FULLSCREEN = 1 << 5,
 	};
 	uint32_t _flags = EMPTY;
 
@@ -65,8 +72,10 @@ struct wiImageParams
 	XMFLOAT2 scale;
 	XMFLOAT4 col;
 	XMFLOAT4 drawRect;
+	XMFLOAT4 drawRect2;
 	XMFLOAT4 lookAt;			//(x,y,z) : direction, (w) :isenabled?
 	XMFLOAT2 texOffset;
+	XMFLOAT2 texOffset2;
 	XMFLOAT2 pivot;				// (0,0) : upperleft, (0.5,0.5) : center, (1,1) : bottomright
 	float rotation;
 	float mipLevel;
@@ -74,29 +83,30 @@ struct wiImageParams
 	float opacity;
 	XMFLOAT2 corners[4];		// you can deform the image by its corners (0: top left, 1: top right, 2: bottom left, 3: bottom right)
 
-	UINT stencilRef;
+	uint8_t stencilRef;
 	STENCILMODE stencilComp;
 	BLENDMODE blendFlag;
 	ImageType typeFlag;
 	SAMPLEMODE sampleFlag;
 	QUALITY quality;
 
-	wiGraphicsTypes::Texture2D* maskMap;
-	wiGraphicsTypes::Texture2D* distortionMap;
-	wiGraphicsTypes::Texture2D* refractionSource;
+	const wiGraphics::Texture2D* maskMap;
+	const wiGraphics::Texture2D* distortionMap;
+	const wiGraphics::Texture2D* refractionSource;
 	// Generic texture
-	void setMaskMap(wiGraphicsTypes::Texture2D* view) { maskMap = view; }
+	void setMaskMap(const wiGraphics::Texture2D* view) { maskMap = view; }
 	// The normalmap texture which should distort the refraction source
-	void setDistortionMap(wiGraphicsTypes::Texture2D* view) { distortionMap = view; }
+	void setDistortionMap(const wiGraphics::Texture2D* view) { distortionMap = view; }
 	// The texture which should be distorted
-	void setRefractionSource(wiGraphicsTypes::Texture2D* view) { refractionSource = view; }
+	void setRefractionSource(const wiGraphics::Texture2D* view) { refractionSource = view; }
 
 	struct PostProcess 
 	{
 		enum POSTPROCESS
 		{
 			DISABLED,
-			BLUR,
+			BLUR_LDR,
+			BLUR_HDR,
 			LIGHTSHAFT,
 			OUTLINE,
 			DEPTHOFFIELD,
@@ -107,7 +117,6 @@ struct wiImageParams
 			SSSS,
 			SSR,
 			COLORGRADE,
-			STEREOGRAM,
 			TONEMAP,
 			REPROJECTDEPTHBUFFER,
 			DOWNSAMPLEDEPTHBUFFER,
@@ -119,6 +128,14 @@ struct wiImageParams
 
 		union PostProcessParams
 		{
+			struct Outline
+			{
+				float colorR;
+				float colorG;
+				float colorB;
+				float threshold;
+				float thickness;
+			} outline;
 			struct Blur
 			{
 				float x;
@@ -126,7 +143,12 @@ struct wiImageParams
 			} blur;
 			Blur ssss;
 			Blur sun;
-			float dofStrength;
+			struct SSAO
+			{
+				float range;
+				UINT sampleCount;
+			} ssao;
+			float dofFocus;
 			float sharpen;
 			float exposure;
 			float bloomThreshold;
@@ -134,18 +156,25 @@ struct wiImageParams
 
 		bool isActive() const { return type != DISABLED; }
 		void clear() { type = DISABLED; }
-		void setBlur(const XMFLOAT2& direction) { type = BLUR; params.blur.x = direction.x; params.blur.y = direction.y; }
+		void setBlur(const XMFLOAT2& direction, bool hdr = false) { type = (hdr ? BLUR_HDR : BLUR_LDR); params.blur.x = direction.x; params.blur.y = direction.y; }
 		void setBloom(float threshold) { type = BLOOMSEPARATE; params.bloomThreshold = threshold; }
-		void setDOF(float value) { if (value > 0) { type = DEPTHOFFIELD; params.dofStrength = value; } }
+		void setDOF(float focus) { if (focus > 0) { type = DEPTHOFFIELD; params.dofFocus = focus; } }
 		void setMotionBlur() { type = MOTIONBLUR; }
-		void setOutline() { type = OUTLINE; }
+		void setOutline(float threshold = 0.1f, float thickness = 1.0f, const XMFLOAT3& color = XMFLOAT3(0, 0, 0)) 
+		{ 
+			type = OUTLINE; 
+			params.outline.threshold = threshold; 
+			params.outline.thickness = thickness; 
+			params.outline.colorR = color.x;
+			params.outline.colorG = color.y;
+			params.outline.colorB = color.z;
+		}
 		void setFXAA() { type = FXAA; }
-		void setSSAO() { type = SSAO; }
+		void setSSAO(float range = 1.0f, UINT sampleCount = 16) { type = SSAO; params.ssao.range = range; params.ssao.sampleCount = sampleCount; }
 		void setLinDepth() { type = LINEARDEPTH; }
 		void setColorGrade() { type = COLORGRADE; }
 		void setSSSS(const XMFLOAT2& value) { type = SSSS; params.ssss.x = value.x; params.ssss.y = value.y; }
 		void setSSR() { type = SSR; }
-		void setStereogram() { type = STEREOGRAM; }
 		void setToneMap(float exposure) { type = TONEMAP; params.exposure = exposure; }
 		void setDepthBufferReprojection() { type = REPROJECTDEPTHBUFFER; }
 		void setDepthBufferDownsampling() { type = DOWNSAMPLEDEPTHBUFFER; }
@@ -163,7 +192,9 @@ struct wiImageParams
 		col = XMFLOAT4(1, 1, 1, 1);
 		scale = XMFLOAT2(1, 1);
 		drawRect = XMFLOAT4(0, 0, 0, 0);
+		drawRect2 = XMFLOAT4(0, 0, 0, 0);
 		texOffset = XMFLOAT2(0, 0);
+		texOffset2 = XMFLOAT2(0, 0);
 		lookAt = XMFLOAT4(0, 0, 0, 0);
 		pivot = XMFLOAT2(0, 0);
 		fade = rotation = 0.0f;
@@ -185,13 +216,16 @@ struct wiImageParams
 	}
 
 	constexpr bool isDrawRectEnabled() const { return _flags & DRAWRECT; }
+	constexpr bool isDrawRect2Enabled() const { return _flags & DRAWRECT2; }
 	constexpr bool isMirrorEnabled() const { return _flags & MIRROR; }
 	constexpr bool isExtractNormalMapEnabled() const { return _flags & EXTRACT_NORMALMAP; }
 	constexpr bool isHDREnabled() const { return _flags & HDR; }
 	constexpr bool isFullScreenEnabled() const { return _flags & FULLSCREEN; }
 
-	// enables draw rectangle (cutout texture outside draw rectangle)
+	// enables draw rectangle for base texture (cutout texture outside draw rectangle)
 	void enableDrawRect(const XMFLOAT4& rect) { _flags |= DRAWRECT; drawRect = rect; }
+	// enables draw rectangle for mask texture (cutout texture outside draw rectangle)
+	void enableDrawRect2(const XMFLOAT4& rect) { _flags |= DRAWRECT2; drawRect2 = rect; }
 	// mirror the image horizontally
 	void enableMirror() { _flags |= MIRROR; }
 	// enable normal map extraction shader that will perform texcolor * 2 - 1 (preferably onto a signed render target)
@@ -201,8 +235,10 @@ struct wiImageParams
 	// enable full screen override. It just draws texture onto the full screen, disabling any other setup except sampler and stencil)
 	void enableFullScreen() { _flags |= FULLSCREEN; }
 
-	// disable draw rectangle (whole texture will be drawn, no cutout)
+	// disable draw rectangle for base texture (whole texture will be drawn, no cutout)
 	void disableDrawRect() { _flags &= ~DRAWRECT; }
+	// disable draw rectangle for mask texture (whole texture will be drawn, no cutout)
+	void disableDrawRect2() { _flags &= ~DRAWRECT2; }
 	// disable mirroring
 	void disableMirror() { _flags &= ~MIRROR; }
 	// disable normal map extraction shader

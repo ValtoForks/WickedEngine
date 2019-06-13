@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "wiSceneSystem.h"
 #include "ModelImporter.h"
+#include "wiRandom.h"
 
 #include "Utility/stb_image.h"
 
@@ -11,9 +12,10 @@
 
 #include <fstream>
 #include <sstream>
+#include <unordered_map>
 
 using namespace std;
-using namespace wiGraphicsTypes;
+using namespace wiGraphics;
 using namespace wiSceneSystem;
 using namespace wiECS;
 
@@ -24,9 +26,9 @@ static const bool transform_to_LH = true;
 
 namespace tinygltf
 {
-	bool LoadImageData(Image *image, std::string *err, std::string *warn,
-		int req_width, int req_height, const unsigned char *bytes,
-		int size, void *)
+	bool LoadImageData(Image *image, const int image_idx, std::string *err,
+		std::string *warn, int req_width, int req_height,
+		const unsigned char *bytes, int size, void *)
 	{
 		(void)warn;
 
@@ -89,17 +91,16 @@ namespace tinygltf
 	}
 }
 
-
-void RegisterTexture2D(tinygltf::Image *image)
+void RegisterTexture2D(tinygltf::Image *image, const string& type_name)
 {
-	// We will load the texture2d by hand here and register to the resource manager
+	// We will load the texture2d by hand here and register to the resource manager (if it was not already registered)
+	if (wiResourceManager::GetGlobal().get(wiHashString(image->uri)).data == nullptr)
 	{
 		int width = image->width;
 		int height = image->height;
 		int channelCount = image->component;
-		const unsigned char* rgb = image->image.data();
 
-		if (rgb != nullptr)
+		if (!image->image.empty())
 		{
 			TextureDesc desc;
 			desc.ArraySize = 1;
@@ -113,18 +114,18 @@ void RegisterTexture2D(tinygltf::Image *image)
 			desc.Usage = USAGE_DEFAULT;
 
 			UINT mipwidth = width;
-			SubresourceData* InitData = new SubresourceData[desc.MipLevels];
+			vector<SubresourceData> InitData(desc.MipLevels);
 			for (UINT mip = 0; mip < desc.MipLevels; ++mip)
 			{
-				InitData[mip].pSysMem = rgb;
+				InitData[mip].pSysMem = image->image.data();
 				InitData[mip].SysMemPitch = static_cast<UINT>(mipwidth * channelCount);
-				mipwidth = max(1, mipwidth / 2);
+				mipwidth = std::max(1u, mipwidth / 2);
 			}
 
 			Texture2D* tex = new Texture2D;
 			tex->RequestIndependentShaderResourcesForMIPs(true);
 			tex->RequestIndependentUnorderedAccessResourcesForMIPs(true);
-			HRESULT hr = wiRenderer::GetDevice()->CreateTexture2D(&desc, InitData, &tex);
+			HRESULT hr = wiRenderer::GetDevice()->CreateTexture2D(&desc, InitData.data(), tex);
 			assert(SUCCEEDED(hr));
 
 			if (tex != nullptr)
@@ -133,113 +134,123 @@ void RegisterTexture2D(tinygltf::Image *image)
 
 				if (image->uri.empty())
 				{
-					static UINT imgcounter = 0;
-					stringstream ss("");
-					ss << "gltfLoader_image" << imgcounter++;
+					// If the texture was embedded, export it as a file:
+					stringstream ss;
+					do {
+						ss.str("");
+						ss << "gltfimport_" << type_name << "_" << wiRandom::getRandom(INT_MAX) << ".png";
+					} while (wiHelper::FileExists(ss.str())); // this is to avoid overwriting an existing exported image
 					image->uri = ss.str();
+					bool success = wiHelper::saveTextureToFile(image->image, desc, ss.str());
+					assert(success);
 				}
 
 				// We loaded the texture2d, so register to the resource manager to be retrieved later:
-				wiResourceManager::GetGlobal().Register(image->uri, tex, wiResourceManager::IMAGE);
+				wiResourceManager::GetGlobal().Register(image->uri, tex, wiResourceManager::IMAGE_2D);
 			}
 		}
 	}
 }
 
 
+
 struct LoaderState
 {
 	tinygltf::Model gltfModel;
-	Scene scene;
-	unordered_map<const tinygltf::Node*, Entity> entityMap;
-	vector<Entity> materialArray;
-	vector<Entity> meshArray;
-	vector<Entity> armatureArray;
+	Scene* scene;
+	unordered_map<int, Entity> entityMap;  // node -> entity
 };
 
 // Recursively loads nodes and resolves hierarchy:
-void LoadNode(tinygltf::Node* node, Entity parent, LoaderState& state)
+void LoadNode(int nodeIndex, Entity parent, LoaderState& state)
 {
-	if (node == nullptr)
+	if (nodeIndex < 0)
 	{
 		return;
 	}
-
+	auto& node = state.gltfModel.nodes[nodeIndex];
+	Scene& scene = *state.scene;
 	Entity entity = INVALID_ENTITY;
 
-	if(node->mesh >= 0)
+	if(node.mesh >= 0)
 	{
-		entity = state.scene.Entity_CreateObject(node->name);
-		ObjectComponent& object = *state.scene.objects.GetComponent(entity);
+		assert(node.mesh < (int)scene.meshes.GetCount());
 
-		if (node->mesh < (int)state.meshArray.size())
+		if (node.skin >= 0)
 		{
-			object.meshID = state.meshArray[node->mesh];
+			// This node is an armature:
+			MeshComponent& mesh = scene.meshes[node.mesh];
+			assert(!mesh.vertex_boneindices.empty());
+			entity = scene.armatures.GetEntity(node.skin);
+			mesh.armatureID = entity;
 
-			if (node->skin >= 0)
-			{
-				MeshComponent& mesh = *state.scene.meshes.GetComponent(object.meshID);
-				assert(!mesh.vertex_boneindices.empty());
-				mesh.armatureID = state.armatureArray[node->skin];
-			}
+			// The object component will use an identity transform but will be parented to the armature:
+			Entity objectEntity = scene.Entity_CreateObject(node.name);
+			ObjectComponent& object = *scene.objects.GetComponent(objectEntity);
+			object.meshID = scene.meshes.GetEntity(node.mesh);
+			scene.Component_Attach(objectEntity, entity);
 		}
 		else
 		{
-			assert(0);
+			// This node is a mesh instance:
+			entity = scene.Entity_CreateObject(node.name);
+			ObjectComponent& object = *scene.objects.GetComponent(entity);
+			object.meshID = scene.meshes.GetEntity(node.mesh);
 		}
 	}
-	else if (node->camera >= 0)
+	else if (node.camera >= 0)
 	{
-		if (node->name.empty())
+		if (node.name.empty())
 		{
 			static int camID = 0;
 			stringstream ss("");
 			ss << "cam" << camID++;
-			node->name = ss.str();
+			node.name = ss.str();
 		}
 
-		entity = state.scene.Entity_CreateCamera(node->name, (float)wiRenderer::GetInternalResolution().x, (float)wiRenderer::GetInternalResolution().y, 0.1f, 800);
+		entity = scene.Entity_CreateCamera(node.name, (float)wiRenderer::GetInternalResolution().x, (float)wiRenderer::GetInternalResolution().y, 0.1f, 800);
 	}
 
 	if (entity == INVALID_ENTITY)
 	{
 		entity = CreateEntity();
-		state.scene.transforms.Create(entity);
+		scene.transforms.Create(entity);
+		scene.names.Create(entity) = node.name;
 	}
 
-	state.entityMap[node] = entity;
+	state.entityMap[nodeIndex] = entity;
 
-	TransformComponent& transform = *state.scene.transforms.GetComponent(entity);
-	if (!node->scale.empty())
+	TransformComponent& transform = *scene.transforms.GetComponent(entity);
+	if (!node.scale.empty())
 	{
-		transform.scale_local = XMFLOAT3((float)node->scale[0], (float)node->scale[1], (float)node->scale[2]);
+		transform.scale_local = XMFLOAT3((float)node.scale[0], (float)node.scale[1], (float)node.scale[2]);
 	}
-	if (!node->rotation.empty())
+	if (!node.rotation.empty())
 	{
-		transform.rotation_local = XMFLOAT4((float)node->rotation[0], (float)node->rotation[1], (float)node->rotation[2], (float)node->rotation[3]);
+		transform.rotation_local = XMFLOAT4((float)node.rotation[0], (float)node.rotation[1], (float)node.rotation[2], (float)node.rotation[3]);
 	}
-	if (!node->translation.empty())
+	if (!node.translation.empty())
 	{
-		transform.translation_local = XMFLOAT3((float)node->translation[0], (float)node->translation[1], (float)node->translation[2]);
+		transform.translation_local = XMFLOAT3((float)node.translation[0], (float)node.translation[1], (float)node.translation[2]);
 	}
-	if (!node->matrix.empty())
+	if (!node.matrix.empty())
 	{
-		transform.world._11 = (float)node->matrix[0];
-		transform.world._12 = (float)node->matrix[1];
-		transform.world._13 = (float)node->matrix[2];
-		transform.world._14 = (float)node->matrix[3];
-		transform.world._21 = (float)node->matrix[4];
-		transform.world._22 = (float)node->matrix[5];
-		transform.world._23 = (float)node->matrix[6];
-		transform.world._24 = (float)node->matrix[7];
-		transform.world._31 = (float)node->matrix[8];
-		transform.world._32 = (float)node->matrix[9];
-		transform.world._33 = (float)node->matrix[10];
-		transform.world._34 = (float)node->matrix[11];
-		transform.world._41 = (float)node->matrix[12];
-		transform.world._42 = (float)node->matrix[13];
-		transform.world._43 = (float)node->matrix[14];
-		transform.world._44 = (float)node->matrix[15];
+		transform.world._11 = (float)node.matrix[0];
+		transform.world._12 = (float)node.matrix[1];
+		transform.world._13 = (float)node.matrix[2];
+		transform.world._14 = (float)node.matrix[3];
+		transform.world._21 = (float)node.matrix[4];
+		transform.world._22 = (float)node.matrix[5];
+		transform.world._23 = (float)node.matrix[6];
+		transform.world._24 = (float)node.matrix[7];
+		transform.world._31 = (float)node.matrix[8];
+		transform.world._32 = (float)node.matrix[9];
+		transform.world._33 = (float)node.matrix[10];
+		transform.world._34 = (float)node.matrix[11];
+		transform.world._41 = (float)node.matrix[12];
+		transform.world._42 = (float)node.matrix[13];
+		transform.world._43 = (float)node.matrix[14];
+		transform.world._44 = (float)node.matrix[15];
 		transform.ApplyTransform(); // this creates S, R, T vectors from world matrix
 	}
 
@@ -250,19 +261,19 @@ void LoadNode(tinygltf::Node* node, Entity parent, LoaderState& state)
 
 	if (parent != INVALID_ENTITY)
 	{
-		state.scene.Component_Attach(entity, parent);
+		scene.Component_Attach(entity, parent);
 	}
 
-	if (!node->children.empty())
+	if (!node.children.empty())
 	{
-		for (int child : node->children)
+		for (int child : node.children)
 		{
-			LoadNode(&state.gltfModel.nodes[child], entity, state);
+			LoadNode(child, entity, state);
 		}
 	}
 }
 
-void ImportModel_GLTF(const std::string& fileName)
+void ImportModel_GLTF(const std::string& fileName, Scene& scene)
 {
 	string directory, name;
 	wiHelper::SplitPath(fileName, directory, name);
@@ -278,6 +289,7 @@ void ImportModel_GLTF(const std::string& fileName)
 	loader.SetImageWriter(tinygltf::WriteImageData, nullptr);
 	
 	LoaderState state;
+	state.scene = &scene;
 
 	bool ret;
 	if (!extension.compare("GLTF"))
@@ -293,209 +305,84 @@ void ImportModel_GLTF(const std::string& fileName)
 	}
 
 	Entity rootEntity = CreateEntity();
-	state.scene.transforms.Create(rootEntity);
+	scene.transforms.Create(rootEntity);
 
 	// Create materials:
 	for (auto& x : state.gltfModel.materials)
 	{
-		Entity materialEntity = state.scene.Entity_CreateMaterial(x.name);
+		Entity materialEntity = scene.Entity_CreateMaterial(x.name);
 
-		state.materialArray.push_back(materialEntity);
-
-		MaterialComponent& material = *state.scene.materials.GetComponent(materialEntity);
+		MaterialComponent& material = *scene.materials.GetComponent(materialEntity);
 
 		material.baseColor = XMFLOAT4(1, 1, 1, 1);
 		material.roughness = 1.0f;
 		material.metalness = 1.0f;
 		material.reflectance = 0.02f;
-		material.emissive = 0;
 
+		// metallic-roughness workflow:
 		auto& baseColorTexture = x.values.find("baseColorTexture");
 		auto& metallicRoughnessTexture = x.values.find("metallicRoughnessTexture");
-		auto& normalTexture = x.additionalValues.find("normalTexture");
-		auto& emissiveTexture = x.additionalValues.find("emissiveTexture");
-		auto& occlusionTexture = x.additionalValues.find("occlusionTexture");
-
 		auto& baseColorFactor = x.values.find("baseColorFactor");
 		auto& roughnessFactor = x.values.find("roughnessFactor");
 		auto& metallicFactor = x.values.find("metallicFactor");
+
+		// common workflow:
+		auto& normalTexture = x.additionalValues.find("normalTexture");
+		auto& emissiveTexture = x.additionalValues.find("emissiveTexture");
+		auto& occlusionTexture = x.additionalValues.find("occlusionTexture");
 		auto& emissiveFactor = x.additionalValues.find("emissiveFactor");
 		auto& alphaCutoff = x.additionalValues.find("alphaCutoff");
+		auto& alphaMode = x.additionalValues.find("alphaMode");
 
 		if (baseColorTexture != x.values.end())
 		{
 			auto& tex = state.gltfModel.textures[baseColorTexture->second.TextureIndex()];
 			auto& img = state.gltfModel.images[tex.source];
-			RegisterTexture2D(&img);
+			RegisterTexture2D(&img, "basecolor");
 			material.baseColorMapName = img.uri;
+			material.uvset_baseColorMap = baseColorTexture->second.TextureTexCoord();
 		}
-		else if(!state.gltfModel.images.empty())
-		{
-			// For some reason, we don't have diffuse texture, but have other textures
-			//	I have a problem, because one model viewer displays textures on a model which has no basecolor set in its material...
-			//	This is probably not how it should be (todo)
-			RegisterTexture2D(&state.gltfModel.images[0]);
-			material.baseColorMapName = state.gltfModel.images[0].uri;
-		}
-
-		tinygltf::Image* img_nor = nullptr;
-		tinygltf::Image* img_met_rough = nullptr;
-		tinygltf::Image* img_emissive = nullptr;
-
 		if (normalTexture != x.additionalValues.end())
 		{
 			auto& tex = state.gltfModel.textures[normalTexture->second.TextureIndex()];
-			img_nor = &state.gltfModel.images[tex.source];
+			auto& img = state.gltfModel.images[tex.source];
+			RegisterTexture2D(&img, "normal");
+			material.normalMapName = img.uri;
+			material.SetFlipNormalMap(true); // gltf import will always flip normal map by default
+			material.uvset_normalMap = normalTexture->second.TextureTexCoord();
 		}
 		if (metallicRoughnessTexture != x.values.end())
 		{
 			auto& tex = state.gltfModel.textures[metallicRoughnessTexture->second.TextureIndex()];
-			img_met_rough = &state.gltfModel.images[tex.source];
+			auto& img = state.gltfModel.images[tex.source];
+			RegisterTexture2D(&img, "roughness_metallic");
+			material.surfaceMapName = img.uri;
+			material.uvset_surfaceMap = metallicRoughnessTexture->second.TextureTexCoord();
 		}
 		if (emissiveTexture != x.additionalValues.end())
 		{
 			auto& tex = state.gltfModel.textures[emissiveTexture->second.TextureIndex()];
-			img_emissive = &state.gltfModel.images[tex.source];
+			auto& img = state.gltfModel.images[tex.source];
+			RegisterTexture2D(&img, "emissive");
+			material.emissiveMapName = img.uri;
+			material.uvset_emissiveMap = emissiveTexture->second.TextureTexCoord();
 		}
-
-		// Now we will begin interleaving texture data to match engine layout:
-
-		if (img_nor != nullptr)
+		if (occlusionTexture != x.additionalValues.end())
 		{
-			uint32_t* data32_roughness = nullptr;
-			if (img_met_rough != nullptr && img_met_rough->width == img_nor->width && img_met_rough->height == img_nor->height)
-			{
-				data32_roughness = (uint32_t*)img_met_rough->image.data();
-			}
-			else if (img_met_rough != nullptr)
-			{
-				wiBackLog::post("[gltf] Warning: there is a normalmap and roughness texture, but not the same size! Roughness will not be baked in!");
-			}
-
-			// Convert normal map:
-			uint32_t* data32 = (uint32_t*)img_nor->image.data();
-			for (int i = 0; i < img_nor->width * img_nor->height; ++i)
-			{
-				uint32_t pixel = data32[i];
-				float r = ((pixel >> 0)  & 255) / 255.0f;
-				float g = ((pixel >> 8)  & 255) / 255.0f;
-				float b = ((pixel >> 16) & 255) / 255.0f;
-				float a = ((pixel >> 24) & 255) / 255.0f;
-
-				// swap normal y direction:
-				g = 1 - g;
-
-				// reset roughness:
-				a = 1;
-
-				if (data32_roughness != nullptr)
-				{
-					// add roughness from texture (G):
-					a = ((data32_roughness[i] >> 8) & 255) / 255.0f;
-					a = max(1.0f / 255.0f, a); // disallow 0 roughness (but is it really a good idea to do it here???)
-				}
-
-				uint32_t rgba8 = 0;
-				rgba8 |= (uint32_t)(r * 255.0f) << 0;
-				rgba8 |= (uint32_t)(g * 255.0f) << 8;
-				rgba8 |= (uint32_t)(b * 255.0f) << 16;
-				rgba8 |= (uint32_t)(a * 255.0f) << 24;
-
-				data32[i] = rgba8;
-			}
-
-			RegisterTexture2D(img_nor);
-			material.normalMapName = img_nor->uri;
+			auto& tex = state.gltfModel.textures[occlusionTexture->second.TextureIndex()];
+			auto& img = state.gltfModel.images[tex.source];
+			RegisterTexture2D(&img, "occlusion");
+			material.occlusionMapName = img.uri;
+			material.uvset_occlusionMap = occlusionTexture->second.TextureTexCoord();
+			material.SetOcclusionEnabled_Secondary(true);
 		}
-
-		if (img_met_rough != nullptr)
-		{
-			uint32_t* data32_emissive = nullptr;
-			if (img_emissive != nullptr && img_emissive->width == img_met_rough->width && img_emissive->height == img_met_rough->height)
-			{
-				data32_emissive = (uint32_t*)img_emissive->image.data();
-			}
-
-			uint32_t* data32 = (uint32_t*)img_met_rough->image.data();
-			for (int i = 0; i < img_met_rough->width * img_met_rough->height; ++i)
-			{
-				uint32_t pixel = data32[i];
-				float r = ((pixel >> 0) & 255) / 255.0f;
-				float g = ((pixel >> 8) & 255) / 255.0f;
-				float b = ((pixel >> 16) & 255) / 255.0f;
-				float a = ((pixel >> 24) & 255) / 255.0f;
-
-				float reflectance = 1;
-				float metalness = b;
-				float emissive = 0;
-				float sss = 1;
-
-				if (data32_emissive != nullptr)
-				{
-					// add emissive from texture (R):
-					//	(Currently only supporting single channel emissive)
-					emissive = ((data32_emissive[i] >> 0) & 255) / 255.0f;
-				}
-
-				uint32_t rgba8 = 0;
-				rgba8 |= (uint32_t)(reflectance * 255.0f) << 0;
-				rgba8 |= (uint32_t)(metalness * 255.0f) << 8;
-				rgba8 |= (uint32_t)(emissive * 255.0f) << 16;
-				rgba8 |= (uint32_t)(sss * 255.0f) << 24;
-
-				data32[i] = rgba8;
-			}
-
-			RegisterTexture2D(img_met_rough);
-			material.surfaceMapName = img_met_rough->uri;
-		}
-		else if (img_emissive != nullptr)
-		{
-			// No metalness texture, just emissive...
-			uint32_t* data32 = (uint32_t*)img_emissive->image.data();
-
-			if (data32 != nullptr)
-			{
-				for (int i = 0; i < img_emissive->width * img_emissive->height; ++i)
-				{
-					uint32_t pixel = data32[i];
-					float r = ((pixel >> 0) & 255) / 255.0f;
-					float g = ((pixel >> 8) & 255) / 255.0f;
-					float b = ((pixel >> 16) & 255) / 255.0f;
-					float a = ((pixel >> 24) & 255) / 255.0f;
-
-					float reflectance = 1;
-					float metalness = 1;
-					float emissive = r;
-					float sss = 1;
-
-					uint32_t rgba8 = 0;
-					rgba8 |= (uint32_t)(reflectance * 255.0f) << 0;
-					rgba8 |= (uint32_t)(metalness * 255.0f) << 8;
-					rgba8 |= (uint32_t)(emissive * 255.0f) << 16;
-					rgba8 |= (uint32_t)(sss * 255.0f) << 24;
-
-					data32[i] = rgba8;
-				}
-
-				RegisterTexture2D(img_emissive);
-				material.surfaceMapName = img_emissive->uri;
-			}
-		}
-
-		// Retrieve textures by name:
-		if (!material.baseColorMapName.empty())
-			material.baseColorMap = (Texture2D*)wiResourceManager::GetGlobal().add(material.baseColorMapName);
-		if (!material.normalMapName.empty())
-			material.normalMap = (Texture2D*)wiResourceManager::GetGlobal().add(material.normalMapName);
-		if (!material.surfaceMapName.empty())
-			material.surfaceMap = (Texture2D*)wiResourceManager::GetGlobal().add(material.surfaceMapName);
 
 		if (baseColorFactor != x.values.end())
 		{
 			material.baseColor.x = static_cast<float>(baseColorFactor->second.ColorFactor()[0]);
 			material.baseColor.y = static_cast<float>(baseColorFactor->second.ColorFactor()[1]);
 			material.baseColor.z = static_cast<float>(baseColorFactor->second.ColorFactor()[2]);
+			material.baseColor.w = static_cast<float>(baseColorFactor->second.ColorFactor()[3]);
 		}
 		if (roughnessFactor != x.values.end())
 		{
@@ -507,29 +394,98 @@ void ImportModel_GLTF(const std::string& fileName)
 		}
 		if (emissiveFactor != x.additionalValues.end())
 		{
-			material.emissive = static_cast<float>(emissiveFactor->second.ColorFactor()[0]);
+			material.emissiveColor.x = static_cast<float>(emissiveFactor->second.ColorFactor()[0]);
+			material.emissiveColor.y = static_cast<float>(emissiveFactor->second.ColorFactor()[1]);
+			material.emissiveColor.z = static_cast<float>(emissiveFactor->second.ColorFactor()[2]);
+			material.emissiveColor.w = static_cast<float>(emissiveFactor->second.ColorFactor()[3]);
 		}
 		if (alphaCutoff != x.additionalValues.end())
 		{
 			material.alphaRef = 1 - static_cast<float>(alphaCutoff->second.Factor());
 		}
+		if (alphaMode != x.additionalValues.end())
+		{
+			if (alphaMode->second.string_value.compare("BLEND") == 0)
+			{
+				material.userBlendMode = BLENDMODE_ALPHA;
+			}
+		}
+
+		// specular-glossiness workflow (todo):
+		auto& specularGlossinessWorkflow = x.extensions.find("KHR_materials_pbrSpecularGlossiness");
+		if (specularGlossinessWorkflow != x.extensions.end())
+		{
+			material.SetUseSpecularGlossinessWorkflow(true);
+
+			if (specularGlossinessWorkflow->second.Has("diffuseTexture"))
+			{
+				int index = specularGlossinessWorkflow->second.Get("diffuseTexture").Get("index").Get<int>();
+				auto& tex = state.gltfModel.textures[index];
+				auto& img = state.gltfModel.images[tex.source];
+				RegisterTexture2D(&img, "diffuse");
+				material.baseColorMapName = img.uri;
+				material.uvset_baseColorMap = (uint32_t)specularGlossinessWorkflow->second.Get("diffuseTexture").Get("texCoord").Get<int>();
+			}
+			if (specularGlossinessWorkflow->second.Has("specularGlossinessTexture"))
+			{
+				int index = specularGlossinessWorkflow->second.Get("specularGlossinessTexture").Get("index").Get<int>();
+				auto& tex = state.gltfModel.textures[index];
+				auto& img = state.gltfModel.images[tex.source];
+				RegisterTexture2D(&img, "specular_glossiness");
+				material.surfaceMapName = img.uri;
+				material.uvset_surfaceMap = (uint32_t)specularGlossinessWorkflow->second.Get("specularGlossinessTexture").Get("texCoord").Get<int>();
+			}
+
+			if (specularGlossinessWorkflow->second.Has("diffuseFactor"))
+			{
+				auto& factor = specularGlossinessWorkflow->second.Get("diffuseFactor");
+				material.baseColor.x = factor.ArrayLen() > 0 ? float(factor.Get(0).IsNumber() ? factor.Get(0).Get<double>() : factor.Get(0).Get<int>()) : 1.0f;
+				material.baseColor.y = factor.ArrayLen() > 1 ? float(factor.Get(1).IsNumber() ? factor.Get(1).Get<double>() : factor.Get(1).Get<int>()) : 1.0f;
+				material.baseColor.z = factor.ArrayLen() > 2 ? float(factor.Get(2).IsNumber() ? factor.Get(2).Get<double>() : factor.Get(2).Get<int>()) : 1.0f;
+				material.baseColor.w = factor.ArrayLen() > 3 ? float(factor.Get(3).IsNumber() ? factor.Get(3).Get<double>() : factor.Get(3).Get<int>()) : 1.0f;
+			}
+			//if (specularGlossinessWorkflow->second.Has("specularFactor"))
+			//{
+			//	auto& factor = specularGlossinessWorkflow->second.Get("specularFactor");
+			//	material.baseColor.x = factor.ArrayLen() > 0 ? float(factor.Get(0).IsNumber() ? factor.Get(0).Get<double>() : factor.Get(0).Get<int>()) : 1.0f;
+			//	material.baseColor.y = factor.ArrayLen() > 0 ? float(factor.Get(1).IsNumber() ? factor.Get(1).Get<double>() : factor.Get(1).Get<int>()) : 1.0f;
+			//	material.baseColor.z = factor.ArrayLen() > 0 ? float(factor.Get(2).IsNumber() ? factor.Get(2).Get<double>() : factor.Get(2).Get<int>()) : 1.0f;
+			//	material.baseColor.w = factor.ArrayLen() > 0 ? float(factor.Get(3).IsNumber() ? factor.Get(3).Get<double>() : factor.Get(3).Get<int>()) : 1.0f;
+			//}
+			if (specularGlossinessWorkflow->second.Has("glossinessFactor"))
+			{
+				auto& factor = specularGlossinessWorkflow->second.Get("glossinessFactor");
+				material.roughness = 1 - float(factor.IsNumber() ? factor.Get<double>() : factor.Get<int>());
+			}
+		}
+
+		// Avoid zero roughness factors:
+		material.roughness = max(0.001f, material.roughness);
+
+		// Retrieve textures by name:
+		if (!material.baseColorMapName.empty())
+			material.baseColorMap = (Texture2D*)wiResourceManager::GetGlobal().add(material.baseColorMapName);
+		if (!material.normalMapName.empty())
+			material.normalMap = (Texture2D*)wiResourceManager::GetGlobal().add(material.normalMapName);
+		if (!material.surfaceMapName.empty())
+			material.surfaceMap = (Texture2D*)wiResourceManager::GetGlobal().add(material.surfaceMapName);
+		if (!material.emissiveMapName.empty())
+			material.emissiveMap = (Texture2D*)wiResourceManager::GetGlobal().add(material.emissiveMapName);
+		if (!material.occlusionMapName.empty())
+			material.occlusionMap = (Texture2D*)wiResourceManager::GetGlobal().add(material.occlusionMapName);
 
 	}
 
-	if (state.materialArray.empty())
+	if (scene.materials.GetCount() == 0)
 	{
-		Entity materialEntity = state.scene.Entity_CreateMaterial("GLTFImport_defaultMaterial");
-		state.materialArray.push_back(materialEntity);
+		scene.Entity_CreateMaterial("gltfimport_defaultMaterial");
 	}
 
 	// Create meshes:
 	for (auto& x : state.gltfModel.meshes)
 	{
-		Entity meshEntity = state.scene.Entity_CreateMesh(x.name);
-
-		state.meshArray.push_back(meshEntity);
-
-		MeshComponent& mesh = *state.scene.meshes.GetComponent(meshEntity);
+		Entity meshEntity = scene.Entity_CreateMesh(x.name);
+		MeshComponent& mesh = *scene.meshes.GetComponent(meshEntity);
 
 		for (auto& prim : x.primitives)
 		{
@@ -549,37 +505,51 @@ void ImportModel_GLTF(const std::string& fileName)
 			mesh.subsets.back().indexOffset = (uint32_t)indexOffset;
 			mesh.subsets.back().indexCount = (uint32_t)indexCount;
 
-			mesh.subsets.back().materialID = state.materialArray[max(0, prim.material)];
+			mesh.subsets.back().materialID = scene.materials.GetEntity(max(0, prim.material));
 
 			uint32_t vertexOffset = (uint32_t)mesh.vertex_positions.size();
 
 			const unsigned char* data = buffer.data.data() + accessor.byteOffset + bufferView.byteOffset;
 
+			int index_remap[3];
+			if (transform_to_LH)
+			{
+				index_remap[0] = 0;
+				index_remap[1] = 1;
+				index_remap[2] = 2;
+			}
+			else
+			{
+				index_remap[0] = 0;
+				index_remap[1] = 2;
+				index_remap[2] = 1;
+			}
+
 			if (stride == 1)
 			{
 				for (size_t i = 0; i < indexCount; i += 3)
 				{
-					mesh.indices[indexOffset + i + 0] = vertexOffset + data[i + 0];
-					mesh.indices[indexOffset + i + 1] = vertexOffset + data[i + 1];
-					mesh.indices[indexOffset + i + 2] = vertexOffset + data[i + 2];
+					mesh.indices[indexOffset + i + 0] = vertexOffset + data[i + index_remap[0]];
+					mesh.indices[indexOffset + i + 1] = vertexOffset + data[i + index_remap[1]];
+					mesh.indices[indexOffset + i + 2] = vertexOffset + data[i + index_remap[2]];
 				}
 			}
 			else if (stride == 2)
 			{
 				for (size_t i = 0; i < indexCount; i += 3)
 				{
-					mesh.indices[indexOffset + i + 0] = vertexOffset + ((uint16_t*)data)[i + 0];
-					mesh.indices[indexOffset + i + 1] = vertexOffset + ((uint16_t*)data)[i + 1];
-					mesh.indices[indexOffset + i + 2] = vertexOffset + ((uint16_t*)data)[i + 2];
+					mesh.indices[indexOffset + i + 0] = vertexOffset + ((uint16_t*)data)[i + index_remap[0]];
+					mesh.indices[indexOffset + i + 1] = vertexOffset + ((uint16_t*)data)[i + index_remap[1]];
+					mesh.indices[indexOffset + i + 2] = vertexOffset + ((uint16_t*)data)[i + index_remap[2]];
 				}
 			}
 			else if (stride == 4)
 			{
 				for (size_t i = 0; i < indexCount; i += 3)
 				{
-					mesh.indices[indexOffset + i + 0] = vertexOffset + ((uint32_t*)data)[i + 0];
-					mesh.indices[indexOffset + i + 1] = vertexOffset + ((uint32_t*)data)[i + 1];
-					mesh.indices[indexOffset + i + 2] = vertexOffset + ((uint32_t*)data)[i + 2];
+					mesh.indices[indexOffset + i + 0] = vertexOffset + ((uint32_t*)data)[i + index_remap[0]];
+					mesh.indices[indexOffset + i + 1] = vertexOffset + ((uint32_t*)data)[i + index_remap[1]];
+					mesh.indices[indexOffset + i + 2] = vertexOffset + ((uint32_t*)data)[i + index_remap[2]];
 				}
 			}
 			else
@@ -621,26 +591,26 @@ void ImportModel_GLTF(const std::string& fileName)
 				}
 				else if (!attr_name.compare("TEXCOORD_0"))
 				{
-					mesh.vertex_texcoords.resize(vertexOffset + vertexCount);
+					mesh.vertex_uvset_0.resize(vertexOffset + vertexCount);
 					assert(stride == 8);
 					for (size_t i = 0; i < vertexCount; ++i)
 					{
 						const XMFLOAT2& tex = ((XMFLOAT2*)data)[i];
 
-						mesh.vertex_texcoords[vertexOffset + i].x = tex.x;
-						mesh.vertex_texcoords[vertexOffset + i].y = tex.y;
+						mesh.vertex_uvset_0[vertexOffset + i].x = tex.x;
+						mesh.vertex_uvset_0[vertexOffset + i].y = tex.y;
 					}
 				}
 				else if (!attr_name.compare("TEXCOORD_1"))
 				{
-					mesh.vertex_atlas.resize(vertexOffset + vertexCount);
+					mesh.vertex_uvset_1.resize(vertexOffset + vertexCount);
 					assert(stride == 8);
 					for (size_t i = 0; i < vertexCount; ++i)
 					{
 						const XMFLOAT2& tex = ((XMFLOAT2*)data)[i];
 
-						mesh.vertex_atlas[vertexOffset + i].x = tex.x;
-						mesh.vertex_atlas[vertexOffset + i].y = tex.y;
+						mesh.vertex_uvset_1[vertexOffset + i].x = tex.x;
+						mesh.vertex_uvset_1[vertexOffset + i].y = tex.y;
 					}
 				}
 				else if (!attr_name.compare("JOINTS_0"))
@@ -718,17 +688,10 @@ void ImportModel_GLTF(const std::string& fileName)
 	for (auto& skin : state.gltfModel.skins)
 	{
 		Entity armatureEntity = CreateEntity();
-		state.scene.names.Create(armatureEntity) = skin.name;
-		state.scene.layers.Create(armatureEntity);
-		TransformComponent& transform = state.scene.transforms.Create(armatureEntity);
-		ArmatureComponent& armature = state.scene.armatures.Create(armatureEntity);
-
-		state.armatureArray.push_back(armatureEntity);
-
-		if (transform_to_LH)
-		{
-			XMStoreFloat4x4(&armature.remapMatrix, XMMatrixScaling(1, 1, -1));
-		}
+		scene.names.Create(armatureEntity) = skin.name;
+		scene.layers.Create(armatureEntity);
+		scene.transforms.Create(armatureEntity);
+		ArmatureComponent& armature = scene.armatures.Create(armatureEntity);
 
 		if (skin.inverseBindMatrices >= 0)
 		{
@@ -748,15 +711,14 @@ void ImportModel_GLTF(const std::string& fileName)
 	const tinygltf::Scene &gltfScene = state.gltfModel.scenes[max(0, state.gltfModel.defaultScene)];
 	for (size_t i = 0; i < gltfScene.nodes.size(); i++)
 	{
-		LoadNode(&state.gltfModel.nodes[gltfScene.nodes[i]], rootEntity, state);
+		LoadNode(gltfScene.nodes[i], rootEntity, state);
 	}
 
 	// Create armature-bone mappings:
 	int armatureIndex = 0;
 	for (auto& skin : state.gltfModel.skins)
 	{
-		Entity entity = state.armatureArray[armatureIndex++];
-		ArmatureComponent& armature = *state.scene.armatures.GetComponent(entity);
+		ArmatureComponent& armature = scene.armatures[armatureIndex++];
 
 		const size_t jointCount = skin.joints.size();
 
@@ -766,9 +728,7 @@ void ImportModel_GLTF(const std::string& fileName)
 		for (size_t i = 0; i < jointCount; ++i)
 		{
 			int jointIndex = skin.joints[i];
-			const tinygltf::Node& joint_node = state.gltfModel.nodes[jointIndex];
-
-			Entity boneEntity = state.entityMap[&joint_node];
+			Entity boneEntity = state.entityMap[jointIndex];
 
 			armature.boneCollection[i] = boneEntity;
 		}
@@ -778,8 +738,8 @@ void ImportModel_GLTF(const std::string& fileName)
 	for (auto& anim : state.gltfModel.animations)
 	{
 		Entity entity = CreateEntity();
-		state.scene.names.Create(entity) = anim.name;
-		AnimationComponent& animationcomponent = state.scene.animations.Create(entity);
+		scene.names.Create(entity) = anim.name;
+		AnimationComponent& animationcomponent = scene.animations.Create(entity);
 		animationcomponent.samplers.resize(anim.samplers.size());
 		animationcomponent.channels.resize(anim.channels.size());
 
@@ -868,7 +828,7 @@ void ImportModel_GLTF(const std::string& fileName)
 		{
 			auto& channel = anim.channels[i];
 
-			animationcomponent.channels[i].target = state.entityMap[&state.gltfModel.nodes[channel.target_node]];
+			animationcomponent.channels[i].target = state.entityMap[channel.target_node];
 			assert(channel.sampler >= 0);
 			animationcomponent.channels[i].samplerIndex = (uint32_t)channel.sampler;
 
@@ -894,18 +854,11 @@ void ImportModel_GLTF(const std::string& fileName)
 
 	if (transform_to_LH)
 	{
-		TransformComponent& transform = *state.scene.transforms.GetComponent(rootEntity);
+		TransformComponent& transform = *scene.transforms.GetComponent(rootEntity);
 		transform.scale_local.z = -transform.scale_local.z;
 		transform.SetDirty();
 	}
 
-	// We parented everything to a root transform, but we actually don't need that after loading model.
-	//	Apply every transformation according to root transform, then remove root all together. 
-	//	We could also keep it, but right now, it seems better to delete and have less hierarchy
-	state.scene.Update(0);
-	state.scene.Component_DetachChildren(rootEntity);
-	state.scene.Entity_Remove(rootEntity);
-
-	wiRenderer::GetScene().Merge(state.scene);
+	scene.Update(0);
 
 }

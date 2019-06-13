@@ -6,7 +6,7 @@
 #include <WinBase.h>
 
 using namespace std;
-using namespace wiGraphicsTypes;
+using namespace wiGraphics;
 
 
 PostprocessWindow::PostprocessWindow(wiGUI* gui, RenderPath3D* comp) : GUI(gui), component(comp)
@@ -18,7 +18,7 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, RenderPath3D* comp) : GUI(gui),
 	float screenH = (float)wiRenderer::GetDevice()->GetScreenHeight();
 
 	ppWindow = new wiWindow(GUI, "PostProcess Window");
-	ppWindow->SetSize(XMFLOAT2(360, 550));
+	ppWindow->SetSize(XMFLOAT2(360, 660));
 	GUI->AddWidget(ppWindow);
 
 	float x = 110;
@@ -64,6 +64,26 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, RenderPath3D* comp) : GUI(gui),
 		component->setSSAOEnabled(args.bValue);
 	});
 	ppWindow->AddWidget(ssaoCheckBox);
+
+	ssaoRangeSlider = new wiSlider(0, 2, 1, 1000, "Range: ");
+	ssaoRangeSlider->SetTooltip("Set SSAO Detection range.");
+	ssaoRangeSlider->SetSize(XMFLOAT2(100, 20));
+	ssaoRangeSlider->SetPos(XMFLOAT2(x + 100, y));
+	ssaoRangeSlider->SetValue(component->getSSAORange());
+	ssaoRangeSlider->OnSlide([&](wiEventArgs args) {
+		component->setSSAORange(args.fValue);
+	});
+	ppWindow->AddWidget(ssaoRangeSlider);
+
+	ssaoSampleCountSlider = new wiSlider(9, 64, 16, 64-9, "SampleCount: ");
+	ssaoSampleCountSlider->SetTooltip("Set SSAO Sample Count. Higher values produce better quality, but slower to compute");
+	ssaoSampleCountSlider->SetSize(XMFLOAT2(100, 20));
+	ssaoSampleCountSlider->SetPos(XMFLOAT2(x + 100, y += 35));
+	ssaoSampleCountSlider->SetValue((float)component->getSSAOSampleCount());
+	ssaoSampleCountSlider->OnSlide([&](wiEventArgs args) {
+		component->setSSAOSampleCount((UINT)args.iValue);
+	});
+	ppWindow->AddWidget(ssaoSampleCountSlider);
 
 	ssrCheckBox = new wiCheckBox("SSR: ");
 	ssrCheckBox->SetTooltip("Enable Screen Space Reflections.");
@@ -225,16 +245,6 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, RenderPath3D* comp) : GUI(gui),
 	});
 	ppWindow->AddWidget(colorGradingButton);
 
-	stereogramCheckBox = new wiCheckBox("Stereogram: ");
-	stereogramCheckBox->SetTooltip("Compute a stereogram from the depth buffer. It produces a 3D silhouette image when viewed cross eyed.");
-	stereogramCheckBox->SetScriptTip("RenderPath3D::SetStereogramEnabled(bool value)");
-	stereogramCheckBox->SetPos(XMFLOAT2(x, y += 35));
-	stereogramCheckBox->SetCheck(component->getStereogramEnabled());
-	stereogramCheckBox->OnClick([&](wiEventArgs args) {
-		component->setStereogramEnabled(args.bValue);
-	});
-	ppWindow->AddWidget(stereogramCheckBox);
-
 	sharpenFilterCheckBox = new wiCheckBox("Sharpen Filter: ");
 	sharpenFilterCheckBox->SetTooltip("Toggle sharpening post process of the final image.");
 	sharpenFilterCheckBox->SetScriptTip("RenderPath3D::SetSharpenFilterEnabled(bool value)");
@@ -256,8 +266,37 @@ PostprocessWindow::PostprocessWindow(wiGUI* gui, RenderPath3D* comp) : GUI(gui),
 	});
 	ppWindow->AddWidget(sharpenFilterAmountSlider);
 
+	outlineCheckBox = new wiCheckBox("Cartoon Outline: ");
+	outlineCheckBox->SetTooltip("Toggle the full screen cartoon outline effect.");
+	outlineCheckBox->SetPos(XMFLOAT2(x, y += 35));
+	outlineCheckBox->SetCheck(component->getOutlineEnabled());
+	outlineCheckBox->OnClick([&](wiEventArgs args) {
+		component->setOutlineEnabled(args.bValue);
+	});
+	ppWindow->AddWidget(outlineCheckBox);
 
-	ppWindow->Translate(XMFLOAT3(screenW - 380, 50, 0));
+	outlineThresholdSlider = new wiSlider(0, 1, 0.1f, 1000, "Threshold: ");
+	outlineThresholdSlider->SetTooltip("Outline edge detection threshold. Increase if not enough otlines are detected, decrease if too many outlines are detected.");
+	outlineThresholdSlider->SetSize(XMFLOAT2(100, 20));
+	outlineThresholdSlider->SetPos(XMFLOAT2(x + 100, y));
+	outlineThresholdSlider->SetValue(component->getOutlineThreshold());
+	outlineThresholdSlider->OnSlide([&](wiEventArgs args) {
+		component->setOutlineThreshold(args.fValue);
+	});
+	ppWindow->AddWidget(outlineThresholdSlider);
+
+	outlineThicknessSlider = new wiSlider(0, 4, 1, 1000, "Thickness: ");
+	outlineThicknessSlider->SetTooltip("Set outline thickness.");
+	outlineThicknessSlider->SetSize(XMFLOAT2(100, 20));
+	outlineThicknessSlider->SetPos(XMFLOAT2(x + 100, y += 35));
+	outlineThicknessSlider->SetValue(component->getOutlineThickness());
+	outlineThicknessSlider->OnSlide([&](wiEventArgs args) {
+		component->setOutlineThickness(args.fValue);
+	});
+	ppWindow->AddWidget(outlineThicknessSlider);
+
+
+	ppWindow->Translate(XMFLOAT3(screenW - 500, 50, 0));
 	ppWindow->SetVisible(false);
 
 }

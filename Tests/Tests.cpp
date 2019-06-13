@@ -7,13 +7,6 @@
 
 using namespace wiSceneSystem;
 
-Tests::Tests()
-{
-}
-Tests::~Tests()
-{
-}
-
 void Tests::Initialize()
 {
 	// Call this before Maincomponent::Initialize if you want to load shaders from an other directory!
@@ -115,7 +108,7 @@ TestsRenderer::TestsRenderer()
 		wiRenderer::SetToDrawGridHelper(false);
 		wiRenderer::SetTemporalAAEnabled(false);
 		wiRenderer::ClearWorld();
-		wiRenderer::GetScene().weather = WeatherComponent();
+		wiSceneSystem::GetScene().weather = WeatherComponent();
 		this->clearSprites();
 		this->clearFonts();
 		wiLua::GetGlobal()->KillProcesses();
@@ -142,16 +135,16 @@ TestsRenderer::TestsRenderer()
 		}
 		case 1:
 			wiRenderer::SetTemporalAAEnabled(true);
-			wiRenderer::LoadModel("../models/teapot.wiscene");
+			wiSceneSystem::LoadModel("../models/teapot.wiscene");
 			break;
 		case 2:
-			wiRenderer::LoadModel("../models/emitter_smoke.wiscene");
+			wiSceneSystem::LoadModel("../models/emitter_smoke.wiscene");
 			break;
 		case 3:
-			wiRenderer::LoadModel("../models/emitter_skinned.wiscene");
+			wiSceneSystem::LoadModel("../models/emitter_skinned.wiscene");
 			break;
 		case 4:
-			wiRenderer::LoadModel("../models/hairparticle_torus.wiscene", XMMatrixTranslation(0, 1, 0));
+			wiSceneSystem::LoadModel("../models/hairparticle_torus.wiscene", XMMatrixTranslation(0, 1, 0));
 			break;
 		case 5:
 			wiRenderer::SetToDrawGridHelper(true);
@@ -159,18 +152,18 @@ TestsRenderer::TestsRenderer()
 			break;
 		case 6:
 			wiRenderer::SetTemporalAAEnabled(true);
-			wiRenderer::LoadModel("../models/water_test.wiscene", XMMatrixTranslation(0, 1, 0));
+			wiSceneSystem::LoadModel("../models/water_test.wiscene", XMMatrixTranslation(0, 1, 0));
 			break;
 		case 7:
 			wiRenderer::SetTemporalAAEnabled(true);
-			wiRenderer::LoadModel("../models/shadows_test.wiscene", XMMatrixTranslation(0, 1, 0));
+			wiSceneSystem::LoadModel("../models/shadows_test.wiscene", XMMatrixTranslation(0, 1, 0));
 			break;
 		case 8:
 			wiRenderer::SetTemporalAAEnabled(true);
-			wiRenderer::LoadModel("../models/physics_test.wiscene");
+			wiSceneSystem::LoadModel("../models/physics_test.wiscene");
 			break;
 		case 9:
-			wiRenderer::LoadModel("../models/cloth_test.wiscene", XMMatrixTranslation(0, 3, 4));
+			wiSceneSystem::LoadModel("../models/cloth_test.wiscene", XMMatrixTranslation(0, 3, 4));
 			break;
 		case 10:
 			RunJobSystemTest();
@@ -180,7 +173,7 @@ TestsRenderer::TestsRenderer()
 			break;
 		case 12:
 			wiRenderer::SetTemporalAAEnabled(true);
-			wiRenderer::LoadModel("../models/volumetric_test.wiscene", XMMatrixTranslation(0, 0, 4));
+			wiSceneSystem::LoadModel("../models/volumetric_test.wiscene", XMMatrixTranslation(0, 0, 4));
 			break;
 		case 13:
 			RunSpriteTest();
@@ -188,7 +181,7 @@ TestsRenderer::TestsRenderer()
 		case 14:
 			wiRenderer::GetDevice()->SetVSyncEnabled(false); // turn off vsync if we can to accelerate the baking
 			wiRenderer::SetTemporalAAEnabled(true);
-			wiRenderer::LoadModel("../models/lightmap_bake_test.wiscene", XMMatrixTranslation(0, 0, 4));
+			wiSceneSystem::LoadModel("../models/lightmap_bake_test.wiscene", XMMatrixTranslation(0, 0, 4));
 			break;
 		default:
 			assert(0);
@@ -199,9 +192,6 @@ TestsRenderer::TestsRenderer()
 	testSelector->SetSelected(0);
 	GetGUI().AddWidget(testSelector);
 
-}
-TestsRenderer::~TestsRenderer()
-{
 }
 
 void TestsRenderer::RunJobSystemTest()
@@ -370,7 +360,7 @@ void TestsRenderer::RunSpriteTest()
 
 	// Simple sprite, no animation:
 	{
-		static wiSprite sprite("../logo/logo_small.png");
+		static wiSprite sprite("../images/logo_small.png");
 		sprite.params = params;
 		addSprite(&sprite);
 
@@ -386,7 +376,7 @@ void TestsRenderer::RunSpriteTest()
 
 	// Simple sprite, fade animation:
 	{
-		static wiSprite sprite("../logo/logo_small.png");
+		static wiSprite sprite("../images/logo_small.png");
 		sprite.params = params;
 		sprite.anim = wiSprite::Anim();
 		sprite.anim.fad = 1.2f; // (you can also do opacity animation with sprite.anim.opa)
@@ -405,10 +395,10 @@ void TestsRenderer::RunSpriteTest()
 
 	// Simple sprite, wobble animation:
 	{
-		static wiSprite sprite("../logo/logo_small.png");
+		static wiSprite sprite("../images/logo_small.png");
 		sprite.params = params;
 		sprite.anim = wiSprite::Anim();
-		sprite.anim.wobbleAnim.amount = XMFLOAT2(1.2, 0.8);
+		sprite.anim.wobbleAnim.amount = XMFLOAT2(1.2f, 0.8f);
 		addSprite(&sprite);
 
 		static wiFont font("Wobble animation: ");
@@ -423,7 +413,7 @@ void TestsRenderer::RunSpriteTest()
 
 	// Simple sprite, rotate animation:
 	{
-		static wiSprite sprite("../logo/logo_small.png");
+		static wiSprite sprite("../images/logo_small.png");
 		sprite.params = params;
 		sprite.anim = wiSprite::Anim();
 		sprite.anim.rot = 2.8f;
@@ -442,7 +432,7 @@ void TestsRenderer::RunSpriteTest()
 
 	// Simple sprite, movingtex:
 	{
-		static wiSprite sprite("images/movingtex.png", "../logo/logo_small.png"); // first param is the texture we will display (and also scroll here). Second param is a mask texture
+		static wiSprite sprite("images/movingtex.png", "../images/logo_small.png"); // first param is the texture we will display (and also scroll here). Second param is a mask texture
 		// Don't overwrite all params for this, because we want to keep the mask...
 		sprite.params.pos = params.pos;
 		sprite.params.siz = params.siz;

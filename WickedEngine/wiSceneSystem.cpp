@@ -11,8 +11,10 @@
 #include <functional>
 #include <unordered_map>
 
+#include <DirectXCollision.h>
+
 using namespace wiECS;
-using namespace wiGraphicsTypes;
+using namespace wiGraphics;
 
 namespace wiSceneSystem
 {
@@ -224,7 +226,7 @@ namespace wiSceneSystem
 		XMStoreFloat3(&scale_local, S);
 	}
 
-	Texture2D* MaterialComponent::GetBaseColorMap() const
+	const Texture2D* MaterialComponent::GetBaseColorMap() const
 	{
 		if (baseColorMap != nullptr)
 		{
@@ -232,7 +234,7 @@ namespace wiSceneSystem
 		}
 		return wiTextureHelper::getWhite();
 	}
-	Texture2D* MaterialComponent::GetNormalMap() const
+	const Texture2D* MaterialComponent::GetNormalMap() const
 	{
 		return normalMap;
 		//if (normalMap != nullptr)
@@ -241,7 +243,7 @@ namespace wiSceneSystem
 		//}
 		//return wiTextureHelper::getNormalMapDefault();
 	}
-	Texture2D* MaterialComponent::GetSurfaceMap() const
+	const Texture2D* MaterialComponent::GetSurfaceMap() const
 	{
 		if (surfaceMap != nullptr)
 		{
@@ -249,11 +251,27 @@ namespace wiSceneSystem
 		}
 		return wiTextureHelper::getWhite();
 	}
-	Texture2D* MaterialComponent::GetDisplacementMap() const
+	const Texture2D* MaterialComponent::GetDisplacementMap() const
 	{
 		if (displacementMap != nullptr)
 		{
 			return displacementMap;
+		}
+		return wiTextureHelper::getWhite();
+	}
+	const Texture2D* MaterialComponent::GetEmissiveMap() const
+	{
+		if (emissiveMap != nullptr)
+		{
+			return emissiveMap;
+		}
+		return wiTextureHelper::getWhite();
+	}
+	const Texture2D* MaterialComponent::GetOcclusionMap() const
+	{
+		if (occlusionMap != nullptr)
+		{
+			return occlusionMap;
 		}
 		return wiTextureHelper::getWhite();
 	}
@@ -401,13 +419,13 @@ namespace wiSceneSystem
 			assert(SUCCEEDED(hr));
 		}
 
-		// vertexBuffer - TEXCOORDS
-		if(!vertex_texcoords.empty())
+		// vertexBuffer - UV SET 0
+		if(!vertex_uvset_0.empty())
 		{
-			std::vector<Vertex_TEX> vertices(vertex_texcoords.size());
+			std::vector<Vertex_TEX> vertices(vertex_uvset_0.size());
 			for (size_t i = 0; i < vertices.size(); ++i)
 			{
-				vertices[i].FromFULL(vertex_texcoords[i]);
+				vertices[i].FromFULL(vertex_uvset_0[i]);
 			}
 
 			GPUBufferDesc bd;
@@ -421,8 +439,33 @@ namespace wiSceneSystem
 
 			SubresourceData InitData;
 			InitData.pSysMem = vertices.data();
-			vertexBuffer_TEX.reset(new GPUBuffer);
-			hr = device->CreateBuffer(&bd, &InitData, vertexBuffer_TEX.get());
+			vertexBuffer_UV0.reset(new GPUBuffer);
+			hr = device->CreateBuffer(&bd, &InitData, vertexBuffer_UV0.get());
+			assert(SUCCEEDED(hr));
+		}
+
+		// vertexBuffer - UV SET 1
+		if (!vertex_uvset_1.empty())
+		{
+			std::vector<Vertex_TEX> vertices(vertex_uvset_1.size());
+			for (size_t i = 0; i < vertices.size(); ++i)
+			{
+				vertices[i].FromFULL(vertex_uvset_1[i]);
+			}
+
+			GPUBufferDesc bd;
+			bd.Usage = USAGE_IMMUTABLE;
+			bd.CPUAccessFlags = 0;
+			bd.BindFlags = BIND_VERTEX_BUFFER | BIND_SHADER_RESOURCE;
+			bd.MiscFlags = 0;
+			bd.StructureByteStride = sizeof(Vertex_TEX);
+			bd.ByteWidth = (UINT)(bd.StructureByteStride * vertices.size());
+			bd.Format = Vertex_TEX::FORMAT;
+
+			SubresourceData InitData;
+			InitData.pSysMem = vertices.data();
+			vertexBuffer_UV1.reset(new GPUBuffer);
+			hr = device->CreateBuffer(&bd, &InitData, vertexBuffer_UV1.get());
 			assert(SUCCEEDED(hr));
 		}
 
@@ -434,7 +477,7 @@ namespace wiSceneSystem
 			bd.CPUAccessFlags = 0;
 			bd.BindFlags = BIND_VERTEX_BUFFER | BIND_SHADER_RESOURCE;
 			bd.MiscFlags = 0;
-			bd.StructureByteStride = sizeof(uint32_t);
+			bd.StructureByteStride = sizeof(Vertex_COL);
 			bd.ByteWidth = (UINT)(bd.StructureByteStride * vertex_colors.size());
 			bd.Format = FORMAT_R8G8B8A8_UNORM;
 
@@ -537,7 +580,7 @@ namespace wiSceneSystem
 				}
 			}
 
-			// 3.) Find duplicated vertices by POSITION and TEXCOORD and SUBSET and remove them:
+			// 3.) Find duplicated vertices by POSITION and UV0 and UV1 and ATLAS and SUBSET and remove them:
 			for (auto& subset : subsets)
 			{
 				for (uint32_t i = 0; i < subset.indexCount - 1; i++)
@@ -545,7 +588,9 @@ namespace wiSceneSystem
 					uint32_t ind0 = indices[subset.indexOffset + (uint32_t)i];
 					const XMFLOAT3& p0 = vertex_positions[ind0];
 					const XMFLOAT3& n0 = vertex_normals[ind0];
-					const XMFLOAT2& t0 = vertex_texcoords[ind0];
+					const XMFLOAT2& u00 = vertex_uvset_0.empty() ? XMFLOAT2(0, 0) : vertex_uvset_0[ind0];
+					const XMFLOAT2& u10 = vertex_uvset_1.empty() ? XMFLOAT2(0, 0) : vertex_uvset_1[ind0];
+					const XMFLOAT2& at0 = vertex_atlas.empty() ? XMFLOAT2(0, 0) : vertex_atlas[ind0];
 
 					for (uint32_t j = i + 1; j < subset.indexCount; j++)
 					{
@@ -558,18 +603,28 @@ namespace wiSceneSystem
 
 						const XMFLOAT3& p1 = vertex_positions[ind1];
 						const XMFLOAT3& n1 = vertex_normals[ind1];
-						const XMFLOAT2& t1 = vertex_texcoords[ind1];
+						const XMFLOAT2& u01 = vertex_uvset_0.empty() ? XMFLOAT2(0, 0) : vertex_uvset_0[ind1];
+						const XMFLOAT2& u11 = vertex_uvset_1.empty() ? XMFLOAT2(0, 0) : vertex_uvset_1[ind1];
+						const XMFLOAT2& at1 = vertex_atlas.empty() ? XMFLOAT2(0, 0) : vertex_atlas[ind1];
 
-						bool duplicated_pos =
+						const bool duplicated_pos =
 							fabs(p0.x - p1.x) < FLT_EPSILON &&
 							fabs(p0.y - p1.y) < FLT_EPSILON &&
 							fabs(p0.z - p1.z) < FLT_EPSILON;
 
-						bool duplicated_tex =
-							fabs(t0.x - t1.x) < FLT_EPSILON &&
-							fabs(t0.y - t1.y) < FLT_EPSILON;
+						const bool duplicated_uv0 =
+							fabs(u00.x - u01.x) < FLT_EPSILON &&
+							fabs(u00.y - u01.y) < FLT_EPSILON;
 
-						if (duplicated_pos && duplicated_tex)
+						const bool duplicated_uv1 =
+							fabs(u10.x - u11.x) < FLT_EPSILON &&
+							fabs(u10.y - u11.y) < FLT_EPSILON;
+
+						const bool duplicated_atl =
+							fabs(at0.x - at1.x) < FLT_EPSILON &&
+							fabs(at0.y - at1.y) < FLT_EPSILON;
+
+						if (duplicated_pos && duplicated_uv0 && duplicated_uv1 && duplicated_atl)
 						{
 							// Erase vertices[ind1] because it is a duplicate:
 							if (ind1 < vertex_positions.size())
@@ -580,9 +635,17 @@ namespace wiSceneSystem
 							{
 								vertex_normals.erase(vertex_normals.begin() + ind1);
 							}
-							if (ind1 < vertex_texcoords.size())
+							if (ind1 < vertex_uvset_0.size())
 							{
-								vertex_texcoords.erase(vertex_texcoords.begin() + ind1);
+								vertex_uvset_0.erase(vertex_uvset_0.begin() + ind1);
+							}
+							if (ind1 < vertex_uvset_1.size())
+							{
+								vertex_uvset_1.erase(vertex_uvset_1.begin() + ind1);
+							}
+							if (ind1 < vertex_atlas.size())
+							{
+								vertex_atlas.erase(vertex_atlas.begin() + ind1);
 							}
 							if (ind1 < vertex_boneindices.size())
 							{
@@ -621,7 +684,9 @@ namespace wiSceneSystem
 			std::vector<uint32_t> newIndexBuffer;
 			std::vector<XMFLOAT3> newPositionsBuffer;
 			std::vector<XMFLOAT3> newNormalsBuffer;
-			std::vector<XMFLOAT2> newTexcoordsBuffer;
+			std::vector<XMFLOAT2> newUV0Buffer;
+			std::vector<XMFLOAT2> newUV1Buffer;
+			std::vector<XMFLOAT2> newAtlasBuffer;
 			std::vector<XMUINT4> newBoneIndicesBuffer;
 			std::vector<XMFLOAT4> newBoneWeightsBuffer;
 
@@ -652,9 +717,26 @@ namespace wiSceneSystem
 				newNormalsBuffer.push_back(normal);
 				newNormalsBuffer.push_back(normal);
 
-				newTexcoordsBuffer.push_back(vertex_texcoords[i0]);
-				newTexcoordsBuffer.push_back(vertex_texcoords[i1]);
-				newTexcoordsBuffer.push_back(vertex_texcoords[i2]);
+				if (!vertex_uvset_0.empty())
+				{
+					newUV0Buffer.push_back(vertex_uvset_0[i0]);
+					newUV0Buffer.push_back(vertex_uvset_0[i1]);
+					newUV0Buffer.push_back(vertex_uvset_0[i2]);
+				}
+
+				if (!vertex_uvset_1.empty())
+				{
+					newUV1Buffer.push_back(vertex_uvset_1[i0]);
+					newUV1Buffer.push_back(vertex_uvset_1[i1]);
+					newUV1Buffer.push_back(vertex_uvset_1[i2]);
+				}
+
+				if (!vertex_atlas.empty())
+				{
+					newAtlasBuffer.push_back(vertex_atlas[i0]);
+					newAtlasBuffer.push_back(vertex_atlas[i1]);
+					newAtlasBuffer.push_back(vertex_atlas[i2]);
+				}
 
 				if (!vertex_boneindices.empty())
 				{
@@ -678,7 +760,9 @@ namespace wiSceneSystem
 			// For hard surface normals, we created a new mesh in the previous loop through faces, so swap data:
 			vertex_positions = newPositionsBuffer;
 			vertex_normals = newNormalsBuffer;
-			vertex_texcoords = newTexcoordsBuffer;
+			vertex_uvset_0 = newUV0Buffer;
+			vertex_uvset_1 = newUV1Buffer;
+			vertex_atlas = newAtlasBuffer;
 			if (!vertex_boneindices.empty())
 			{
 				vertex_boneindices = newBoneIndicesBuffer;
@@ -778,19 +862,18 @@ namespace wiSceneSystem
 		lightmapTextureData.clear();
 		lightmapTextureData.resize(data_size);
 
-		Texture2D* stagingTex = nullptr;
 		TextureDesc staging_desc = desc;
 		staging_desc.Usage = USAGE_STAGING;
 		staging_desc.CPUAccessFlags = CPU_ACCESS_READ;
 		staging_desc.BindFlags = 0;
 		staging_desc.MiscFlags = 0;
+
+		Texture2D stagingTex;
 		hr = device->CreateTexture2D(&staging_desc, nullptr, &stagingTex);
 		assert(SUCCEEDED(hr));
 
-		bool download_success = device->DownloadResource(lightmap, stagingTex, lightmapTextureData.data(), GRAPHICSTHREAD_IMMEDIATE);
+		bool download_success = device->DownloadResource(lightmap.get(), &stagingTex, lightmapTextureData.data(), GRAPHICSTHREAD_IMMEDIATE);
 		assert(download_success);
-
-		delete stagingTex;
 	}
 	FORMAT ObjectComponent::GetLightmapFormat()
 	{
@@ -845,17 +928,13 @@ namespace wiSceneSystem
 		height = newHeight;
 		fov = newFOV;
 
-		UpdateProjection();
 		UpdateCamera();
-	}
-	void CameraComponent::UpdateProjection()
-	{
-		XMStoreFloat4x4(&Projection, XMMatrixPerspectiveFovLH(fov, width / height, zFarP, zNearP)); // reverse zbuffer!
-		XMStoreFloat4x4(&realProjection, XMMatrixPerspectiveFovLH(fov, width / height, zNearP, zFarP)); // normal zbuffer!
 	}
 	void CameraComponent::UpdateCamera()
 	{
-		SetDirty(false);
+		XMStoreFloat4x4(&Projection, XMMatrixPerspectiveFovLH(fov, width / height, zFarP, zNearP)); // reverse zbuffer!
+		Projection.m[2][0] = jitter.x;
+		Projection.m[2][1] = jitter.y;
 
 		XMVECTOR _Eye = XMLoadFloat3(&Eye);
 		XMVECTOR _At = XMLoadFloat3(&At);
@@ -876,12 +955,10 @@ namespace wiSceneSystem
 		XMStoreFloat4x4(&Projection, _P);
 		XMStoreFloat4x4(&InvProjection, XMMatrixInverse(nullptr, _P));
 
-		frustum.ConstructFrustum(zFarP, realProjection, View);
+		frustum.Create(Projection, View, zFarP);
 	}
 	void CameraComponent::TransformCamera(const TransformComponent& transform)
 	{
-		SetDirty();
-
 		XMVECTOR S, R, T;
 		XMMatrixDecompose(&S, &R, &T, XMLoadFloat4x4(&transform.world));
 
@@ -1023,30 +1100,30 @@ namespace wiSceneSystem
 		// Entities are unique within a ComponentManager, so the most populated ComponentManager
 		//	will actually give us how many entities there are in the scene
 		size_t entityCount = 0;
-		entityCount = max(entityCount, names.GetCount());
-		entityCount = max(entityCount, layers.GetCount());
-		entityCount = max(entityCount, transforms.GetCount());
-		entityCount = max(entityCount, prev_transforms.GetCount());
-		entityCount = max(entityCount, hierarchy.GetCount());
-		entityCount = max(entityCount, materials.GetCount());
-		entityCount = max(entityCount, meshes.GetCount());
-		entityCount = max(entityCount, impostors.GetCount());
-		entityCount = max(entityCount, objects.GetCount());
-		entityCount = max(entityCount, aabb_objects.GetCount());
-		entityCount = max(entityCount, rigidbodies.GetCount());
-		entityCount = max(entityCount, softbodies.GetCount());
-		entityCount = max(entityCount, armatures.GetCount());
-		entityCount = max(entityCount, lights.GetCount());
-		entityCount = max(entityCount, aabb_lights.GetCount());
-		entityCount = max(entityCount, cameras.GetCount());
-		entityCount = max(entityCount, probes.GetCount());
-		entityCount = max(entityCount, aabb_probes.GetCount());
-		entityCount = max(entityCount, forces.GetCount());
-		entityCount = max(entityCount, decals.GetCount());
-		entityCount = max(entityCount, aabb_decals.GetCount());
-		entityCount = max(entityCount, animations.GetCount());
-		entityCount = max(entityCount, emitters.GetCount());
-		entityCount = max(entityCount, hairs.GetCount());
+		entityCount = std::max(entityCount, names.GetCount());
+		entityCount = std::max(entityCount, layers.GetCount());
+		entityCount = std::max(entityCount, transforms.GetCount());
+		entityCount = std::max(entityCount, prev_transforms.GetCount());
+		entityCount = std::max(entityCount, hierarchy.GetCount());
+		entityCount = std::max(entityCount, materials.GetCount());
+		entityCount = std::max(entityCount, meshes.GetCount());
+		entityCount = std::max(entityCount, impostors.GetCount());
+		entityCount = std::max(entityCount, objects.GetCount());
+		entityCount = std::max(entityCount, aabb_objects.GetCount());
+		entityCount = std::max(entityCount, rigidbodies.GetCount());
+		entityCount = std::max(entityCount, softbodies.GetCount());
+		entityCount = std::max(entityCount, armatures.GetCount());
+		entityCount = std::max(entityCount, lights.GetCount());
+		entityCount = std::max(entityCount, aabb_lights.GetCount());
+		entityCount = std::max(entityCount, cameras.GetCount());
+		entityCount = std::max(entityCount, probes.GetCount());
+		entityCount = std::max(entityCount, aabb_probes.GetCount());
+		entityCount = std::max(entityCount, forces.GetCount());
+		entityCount = std::max(entityCount, decals.GetCount());
+		entityCount = std::max(entityCount, aabb_decals.GetCount());
+		entityCount = std::max(entityCount, animations.GetCount());
+		entityCount = std::max(entityCount, emitters.GetCount());
+		entityCount = std::max(entityCount, hairs.GetCount());
 		return entityCount;
 	}
 
@@ -1167,7 +1244,7 @@ namespace wiSceneSystem
 
 		LightComponent& light = lights.Create(entity);
 		light.energy = energy;
-		light.range = range;
+		light.range_local = range;
 		light.fov = XM_PIDIV4;
 		light.color = color;
 		light.SetType(LightComponent::POINT);
@@ -1191,7 +1268,7 @@ namespace wiSceneSystem
 
 		ForceFieldComponent& force = forces.Create(entity);
 		force.gravity = 0;
-		force.range = 0;
+		force.range_local = 0;
 		force.type = ENTITY_TYPE_FORCEFIELD_POINT;
 
 		return entity;
@@ -1283,7 +1360,7 @@ namespace wiSceneSystem
 		transform.Translate(position);
 		transform.UpdateTransform();
 
-		materials.Create(entity).blendMode = BLENDMODE_ALPHA;
+		materials.Create(entity).userBlendMode = BLENDMODE_ALPHA;
 
 		return entity;
 	}
@@ -1335,25 +1412,33 @@ namespace wiSceneSystem
 		HierarchyComponent& parentcomponent = *hierarchy.GetComponent(entity);
 
 		TransformComponent* transform_parent = transforms.GetComponent(parent);
-		if (transform_parent != nullptr)
+		if (transform_parent == nullptr)
 		{
-			// Save the parent's inverse worldmatrix:
-			XMStoreFloat4x4(&parentcomponent.world_parent_inverse_bind, XMMatrixInverse(nullptr, XMLoadFloat4x4(&transform_parent->world)));
-
-			TransformComponent* transform_child = transforms.GetComponent(entity);
-			if (transform_child != nullptr)
-			{
-				// Child updated immediately, to that it can be immediately attached to afterwards:
-				transform_child->UpdateTransform_Parented(*transform_parent, parentcomponent.world_parent_inverse_bind);
-			}
+			transform_parent = &transforms.Create(parent);
 		}
+		// Save the parent's inverse worldmatrix:
+		XMStoreFloat4x4(&parentcomponent.world_parent_inverse_bind, XMMatrixInverse(nullptr, XMLoadFloat4x4(&transform_parent->world)));
 
+		TransformComponent* transform_child = transforms.GetComponent(entity);
+		if (transform_child == nullptr)
+		{
+			transform_child = &transforms.Create(entity);
+		}
+		// Child updated immediately, to that it can be immediately attached to afterwards:
+		transform_child->UpdateTransform_Parented(*transform_parent, parentcomponent.world_parent_inverse_bind);
+
+		LayerComponent* layer_parent = layers.GetComponent(parent);
+		if (layer_parent == nullptr)
+		{
+			layer_parent = &layers.Create(parent);
+		}
 		LayerComponent* layer_child = layers.GetComponent(entity);
-		if (layer_child != nullptr)
+		if (layer_child == nullptr)
 		{
-			// Save the initial layermask of the child so that it can be restored if detached:
-			parentcomponent.layerMask_bind = layer_child->GetLayerMask();
+			layer_child = &layers.Create(entity);
 		}
+		// Save the initial layermask of the child so that it can be restored if detached:
+		parentcomponent.layerMask_bind = layer_child->GetLayerMask();
 	}
 	void Scene::Component_Detach(Entity entity)
 	{
@@ -1443,7 +1528,7 @@ namespace wiSceneSystem
 					keyRight--;
 
 					// Left keyframe is just near right:
-					keyLeft = max(0, keyRight - 1);
+					keyLeft = std::max(0, keyRight - 1);
 				}
 
 				float left = sampler.keyframe_times[keyLeft];
@@ -1578,13 +1663,25 @@ namespace wiSceneSystem
 		wiJobSystem::Dispatch((uint32_t)armatures.GetCount(), 1, [&](wiJobDispatchArgs args) {
 
 			ArmatureComponent& armature = armatures[args.jobIndex];
+			Entity entity = armatures.GetEntity(args.jobIndex);
+			const TransformComponent& transform = *transforms.GetComponent(entity);
+
+			// The transform world matrices are in world space, but skinning needs them in armature-local space, 
+			//	so that the skin is reusable for instanced meshes.
+			//	We remove the armature's world matrix from the bone world matrix to obtain the bone local transform
+			//	These local bone matrices will only be used for skinning, the actual transform components for the bones
+			//	remain unchanged.
+			//
+			//	This is useful for an other thing too:
+			//	If a whole transform tree is transformed by some parent (even gltf import does that to convert from RH to LH space)
+			//	then the inverseBindMatrices are not reflected in that because they are not contained in the hierarchy system. 
+			//	But this will correct them too.
+			XMMATRIX R = XMMatrixInverse(nullptr, XMLoadFloat4x4(&transform.world));
 
 			if (armature.boneData.size() != armature.boneCollection.size())
 			{
 				armature.boneData.resize(armature.boneCollection.size());
 			}
-
-			XMMATRIX R = XMLoadFloat4x4(&armature.remapMatrix);
 
 			int boneIndex = 0;
 			for (Entity boneEntity : armature.boneCollection)
@@ -1677,11 +1774,12 @@ namespace wiSceneSystem
 
 					if (mesh != nullptr)
 					{
-						aabb = mesh->aabb.get(transform.world);
+						XMMATRIX W = XMLoadFloat4x4(&transform.world);
+						aabb = mesh->aabb.get(W);
 
 						// This is instance bounding box matrix:
 						XMFLOAT4X4 meshMatrix;
-						XMStoreFloat4x4(&meshMatrix, mesh->aabb.getAsBoxMatrix() * XMLoadFloat4x4(&transform.world));
+						XMStoreFloat4x4(&meshMatrix, mesh->aabb.getAsBoxMatrix() * W);
 
 						// We need sometimes the center of the instance bounding box, not the transform position (which can be outside the bounding box)
 						object.center = *((XMFLOAT3*)&meshMatrix._41);
@@ -1697,18 +1795,25 @@ namespace wiSceneSystem
 
 							if (material != nullptr)
 							{
-								if (material->IsTransparent())
+								if (material->IsCustomShader())
 								{
-									object.rendertypeMask |= RENDERTYPE_TRANSPARENT;
+									object.rendertypeMask |= RENDERTYPE_ALL;
 								}
 								else
 								{
-									object.rendertypeMask |= RENDERTYPE_OPAQUE;
-								}
+									if (material->IsTransparent())
+									{
+										object.rendertypeMask |= RENDERTYPE_TRANSPARENT;
+									}
+									else
+									{
+										object.rendertypeMask |= RENDERTYPE_OPAQUE;
+									}
 
-								if (material->IsWater())
-								{
-									object.rendertypeMask |= RENDERTYPE_TRANSPARENT | RENDERTYPE_WATER;
+									if (material->IsWater())
+									{
+										object.rendertypeMask |= RENDERTYPE_TRANSPARENT | RENDERTYPE_WATER;
+									}
 								}
 
 								if (material->HasPlanarReflection())
@@ -1805,7 +1910,7 @@ namespace wiSceneSystem
 			XMStoreFloat3(&decal.position, T);
 			XMFLOAT3 scale;
 			XMStoreFloat3(&scale, S);
-			decal.range = max(scale.x, max(scale.y, scale.z)) * 2;
+			decal.range = std::max(scale.x, std::max(scale.y, scale.z)) * 2;
 
 			AABB& aabb = aabb_decals[args.jobIndex];
 			aabb.createFromHalfWidth(XMFLOAT3(0, 0, 0), XMFLOAT3(1, 1, 1));
@@ -1813,7 +1918,7 @@ namespace wiSceneSystem
 
 			const MaterialComponent& material = *materials.GetComponent(entity);
 			decal.color = material.baseColor;
-			decal.emissive = material.emissive;
+			decal.emissive = material.GetEmissiveStrength();
 			decal.texture = material.GetBaseColorMap();
 			decal.normal = material.GetNormalMap();
 		});
@@ -1841,7 +1946,7 @@ namespace wiSceneSystem
 			XMMatrixDecompose(&S, &R, &T, W);
 			XMFLOAT3 scale;
 			XMStoreFloat3(&scale, S);
-			probe.range = max(scale.x, max(scale.y, scale.z)) * 2;
+			probe.range = std::max(scale.x, std::max(scale.y, scale.z)) * 2;
 
 			AABB& aabb = aabb_probes[args.jobIndex];
 			aabb.createFromHalfWidth(XMFLOAT3(0, 0, 0), XMFLOAT3(1, 1, 1));
@@ -1858,8 +1963,15 @@ namespace wiSceneSystem
 			ForceFieldComponent& force = forces[args.jobIndex];
 			Entity entity = forces.GetEntity(args.jobIndex);
 			const TransformComponent& transform = *transforms.GetComponent(entity);
-			force.position = transform.GetPosition();
-			XMStoreFloat3(&force.direction, XMVector3Normalize(XMVector3TransformNormal(XMVectorSet(0, -1, 0, 0), XMLoadFloat4x4(&transform.world))));
+
+			XMMATRIX W = XMLoadFloat4x4(&transform.world);
+			XMVECTOR S, R, T;
+			XMMatrixDecompose(&S, &R, &T, W);
+
+			XMStoreFloat3(&force.position, T);
+			XMStoreFloat3(&force.direction, XMVector3Normalize(XMVector3TransformNormal(XMVectorSet(0, -1, 0, 0), W)));
+
+			force.range_global = force.range_local * std::max(XMVectorGetX(S), std::max(XMVectorGetY(S), XMVectorGetZ(S)));
 		});
 	}
 	void RunLightUpdateSystem(
@@ -1883,7 +1995,10 @@ namespace wiSceneSystem
 
 			XMStoreFloat3(&light.position, T);
 			XMStoreFloat4(&light.rotation, R);
+			XMStoreFloat3(&light.scale, S);
 			XMStoreFloat3(&light.direction, XMVector3TransformNormal(XMVectorSet(0, 1, 0, 0), W));
+
+			light.range_global = light.range_local * std::max(XMVectorGetX(S), std::max(XMVectorGetY(S), XMVectorGetZ(S)));
 
 			switch (light.type)
 			{
@@ -1891,10 +2006,10 @@ namespace wiSceneSystem
 				aabb.createFromHalfWidth(wiRenderer::GetCamera().Eye, XMFLOAT3(10000, 10000, 10000));
 				break;
 			case LightComponent::SPOT:
-				aabb.createFromHalfWidth(light.position, XMFLOAT3(light.range, light.range, light.range));
+				aabb.createFromHalfWidth(light.position, XMFLOAT3(light.GetRange(), light.GetRange(), light.GetRange()));
 				break;
 			case LightComponent::POINT:
-				aabb.createFromHalfWidth(light.position, XMFLOAT3(light.range, light.range, light.range));
+				aabb.createFromHalfWidth(light.position, XMFLOAT3(light.GetRange(), light.GetRange(), light.GetRange()));
 				break;
 			case LightComponent::SPHERE:
 			case LightComponent::DISC:
@@ -1920,7 +2035,9 @@ namespace wiSceneSystem
 		wiJobSystem::Dispatch((uint32_t)emitters.GetCount(), small_subtask_groupsize, [&](wiJobDispatchArgs args) {
 
 			wiEmittedParticle& emitter = emitters[args.jobIndex];
-			emitter.Update(dt);
+			Entity entity = emitters.GetEntity(args.jobIndex);
+			const TransformComponent& transform = *transforms.GetComponent(entity);
+			emitter.UpdateCPU(transform, dt);
 		});
 
 		wiJobSystem::Dispatch((uint32_t)hairs.GetCount(), small_subtask_groupsize, [&](wiJobDispatchArgs args) {
@@ -1928,7 +2045,6 @@ namespace wiSceneSystem
 			wiHairParticle& hair = hairs[args.jobIndex];
 			Entity entity = hairs.GetEntity(args.jobIndex);
 			const TransformComponent& transform = *transforms.GetComponent(entity);
-			hair.world = transform.world;
 
 			if (hair.meshID != INVALID_ENTITY)
 			{
@@ -1936,19 +2052,7 @@ namespace wiSceneSystem
 
 				if (mesh != nullptr)
 				{
-					XMFLOAT3 min = mesh->aabb.getMin();
-					XMFLOAT3 max = mesh->aabb.getMax();
-
-					max.x += hair.length;
-					max.y += hair.length;
-					max.z += hair.length;
-
-					min.x -= hair.length;
-					min.y -= hair.length;
-					min.z -= hair.length;
-
-					hair.aabb = AABB(min, max);
-					hair.aabb = hair.aabb.get(hair.world);
+					hair.UpdateCPU(transform, *mesh, dt);
 				}
 			}
 
@@ -1975,4 +2079,191 @@ namespace wiSceneSystem
 		}
 	}
 
+
+
+
+
+
+	Entity LoadModel(const std::string& fileName, const XMMATRIX& transformMatrix, bool attached)
+	{
+		Scene scene;
+		Entity root = LoadModel(scene, fileName, transformMatrix, attached);
+		GetScene().Merge(scene);
+		return root;
+	}
+
+	Entity LoadModel(Scene& scene, const std::string& fileName, const XMMATRIX& transformMatrix, bool attached)
+	{
+		wiArchive archive(fileName, true);
+		if (archive.IsOpen())
+		{
+			// Serialize it from file:
+			scene.Serialize(archive);
+
+			// First, create new root:
+			Entity root = CreateEntity();
+			scene.transforms.Create(root);
+			scene.layers.Create(root).layerMask = ~0;
+
+			{
+				// Apply the optional transformation matrix to the new scene:
+
+				// Parent all unparented transforms to new root entity
+				for (size_t i = 0; i < scene.transforms.GetCount() - 1; ++i) // GetCount() - 1 because the last added was the "root"
+				{
+					Entity entity = scene.transforms.GetEntity(i);
+					if (!scene.hierarchy.Contains(entity))
+					{
+						scene.Component_Attach(entity, root);
+					}
+				}
+
+				// The root component is transformed, scene is updated:
+				scene.transforms.GetComponent(root)->MatrixTransform(transformMatrix);
+				scene.Update(0);
+			}
+
+			if (!attached)
+			{
+				// In this case, we don't care about the root anymore, so delete it. This will simplify overall hierarchy
+				scene.Component_DetachChildren(root);
+				scene.Entity_Remove(root);
+				root = INVALID_ENTITY;
+			}
+
+			return root;
+		}
+
+		return INVALID_ENTITY;
+	}
+
+	PickResult Pick(const RAY& ray, UINT renderTypeMask, uint32_t layerMask, const Scene& scene)
+	{
+		PickResult result;
+
+		if (scene.objects.GetCount() > 0)
+		{
+			const XMVECTOR rayOrigin = XMLoadFloat3(&ray.origin);
+			const XMVECTOR rayDirection = XMVector3Normalize(XMLoadFloat3(&ray.direction));
+
+			for (size_t i = 0; i < scene.aabb_objects.GetCount(); ++i)
+			{
+				const AABB& aabb = scene.aabb_objects[i];
+				if (!ray.intersects(aabb))
+				{
+					continue;
+				}
+
+				const ObjectComponent& object = scene.objects[i];
+				if (object.meshID == INVALID_ENTITY)
+				{
+					continue;
+				}
+				if (!(renderTypeMask & object.GetRenderTypes()))
+				{
+					continue;
+				}
+
+				Entity entity = scene.aabb_objects.GetEntity(i);
+				const LayerComponent* layer = scene.layers.GetComponent(entity);
+				if (layer != nullptr && !(layer->GetLayerMask() & layerMask))
+				{
+					continue;
+				}
+
+				const MeshComponent& mesh = *scene.meshes.GetComponent(object.meshID);
+
+				const XMMATRIX objectMat = object.transform_index >= 0 ? XMLoadFloat4x4(&scene.transforms[object.transform_index].world) : XMMatrixIdentity();
+				const XMMATRIX objectMat_Inverse = XMMatrixInverse(nullptr, objectMat);
+
+				const XMVECTOR rayOrigin_local = XMVector3Transform(rayOrigin, objectMat_Inverse);
+				const XMVECTOR rayDirection_local = XMVector3Normalize(XMVector3TransformNormal(rayDirection, objectMat_Inverse));
+
+				const ArmatureComponent* armature = mesh.IsSkinned() ? scene.armatures.GetComponent(mesh.armatureID) : nullptr;
+
+				int subsetCounter = 0;
+				for (auto& subset : mesh.subsets)
+				{
+					for (size_t i = 0; i < subset.indexCount; i += 3)
+					{
+						const uint32_t i0 = mesh.indices[subset.indexOffset + i + 0];
+						const uint32_t i1 = mesh.indices[subset.indexOffset + i + 1];
+						const uint32_t i2 = mesh.indices[subset.indexOffset + i + 2];
+
+						XMVECTOR p0 = XMLoadFloat3(&mesh.vertex_positions[i0]);
+						XMVECTOR p1 = XMLoadFloat3(&mesh.vertex_positions[i1]);
+						XMVECTOR p2 = XMLoadFloat3(&mesh.vertex_positions[i2]);
+
+						if (armature != nullptr)
+						{
+							const XMUINT4& ind0 = mesh.vertex_boneindices[i0];
+							const XMUINT4& ind1 = mesh.vertex_boneindices[i1];
+							const XMUINT4& ind2 = mesh.vertex_boneindices[i2];
+
+							const XMFLOAT4& wei0 = mesh.vertex_boneweights[i0];
+							const XMFLOAT4& wei1 = mesh.vertex_boneweights[i1];
+							const XMFLOAT4& wei2 = mesh.vertex_boneweights[i2];
+
+							XMMATRIX sump;
+
+							sump = armature->boneData[ind0.x].Load() * wei0.x;
+							sump += armature->boneData[ind0.y].Load() * wei0.y;
+							sump += armature->boneData[ind0.z].Load() * wei0.z;
+							sump += armature->boneData[ind0.w].Load() * wei0.w;
+
+							p0 = XMVector3Transform(p0, sump);
+
+							sump = armature->boneData[ind1.x].Load() * wei1.x;
+							sump += armature->boneData[ind1.y].Load() * wei1.y;
+							sump += armature->boneData[ind1.z].Load() * wei1.z;
+							sump += armature->boneData[ind1.w].Load() * wei1.w;
+
+							p1 = XMVector3Transform(p1, sump);
+
+							sump = armature->boneData[ind2.x].Load() * wei2.x;
+							sump += armature->boneData[ind2.y].Load() * wei2.y;
+							sump += armature->boneData[ind2.z].Load() * wei2.z;
+							sump += armature->boneData[ind2.w].Load() * wei2.w;
+
+							p2 = XMVector3Transform(p2, sump);
+						}
+
+						float distance;
+						if (TriangleTests::Intersects(rayOrigin_local, rayDirection_local, p0, p1, p2, distance))
+						{
+							const XMVECTOR pos = XMVector3Transform(XMVectorAdd(rayOrigin_local, rayDirection_local*distance), objectMat);
+							distance = wiMath::Distance(pos, rayOrigin);
+
+							if (distance < result.distance)
+							{
+								const XMVECTOR nor = XMVector3Normalize(XMVector3TransformNormal(XMVector3Cross(XMVectorSubtract(p2, p1), XMVectorSubtract(p1, p0)), objectMat));
+
+								result.entity = entity;
+								XMStoreFloat3(&result.position, pos);
+								XMStoreFloat3(&result.normal, nor);
+								result.distance = distance;
+								result.subsetIndex = subsetCounter;
+								result.vertexID0 = (int)i0;
+								result.vertexID1 = (int)i1;
+								result.vertexID2 = (int)i2;
+							}
+						}
+					}
+					subsetCounter++;
+				}
+
+			}
+		}
+
+		// Construct a matrix that will orient to position (P) according to surface normal (N):
+		XMVECTOR N = XMLoadFloat3(&result.normal);
+		XMVECTOR P = XMLoadFloat3(&result.position);
+		XMVECTOR E = XMLoadFloat3(&ray.origin);
+		XMVECTOR T = XMVector3Normalize(XMVector3Cross(N, P - E));
+		XMVECTOR B = XMVector3Normalize(XMVector3Cross(T, N));
+		XMMATRIX M = { T, N, B, P };
+		XMStoreFloat4x4(&result.orientation, M);
+
+		return result;
+	}
 }

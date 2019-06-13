@@ -4,7 +4,6 @@
 #include "packHF.hlsli"
 #include "reconstructPositionHF.hlsli"
 
-#define	xSSAO texture_8
 #define	xSSR texture_9
 
 #ifdef DEBUG_TILEDLIGHTCULLING
@@ -15,19 +14,15 @@ STRUCTUREDBUFFER(in_Frustums, Frustum, SBSLOT_TILEFRUSTUMS);
 
 #define entityCount xDispatchParams_value0
 
-// Global counter for current index into the entity index list.
-// "o_" prefix indicates entity lists for opaque geometry while 
-// "t_" prefix indicates entity lists for transparent geometry.
-
-// Light index lists and entity grids.
-RWSTRUCTUREDBUFFER(t_EntityIndexList, uint, UAVSLOT_ENTITYINDEXLIST_TRANSPARENT);
 
 #ifdef DEFERRED
 RWTEXTURE2D(deferred_Diffuse, float4, UAVSLOT_TILEDDEFERRED_DIFFUSE);
 RWTEXTURE2D(deferred_Specular, float4, UAVSLOT_TILEDDEFERRED_SPECULAR);
 #else
-RWSTRUCTUREDBUFFER(o_EntityIndexList, uint, UAVSLOT_ENTITYINDEXLIST_OPAQUE);
+RWSTRUCTUREDBUFFER(EntityTiles_Opaque, uint, UAVSLOT_ENTITYTILES_OPAQUE);
 #endif
+
+RWSTRUCTUREDBUFFER(EntityTiles_Transparent, uint, UAVSLOT_ENTITYTILES_TRANSPARENT);
 
 // Group shared variables.
 groupshared uint uMinDepth;
@@ -35,114 +30,28 @@ groupshared uint uMaxDepth;
 groupshared AABB GroupAABB;			// frustum AABB around min-max depth in View Space
 groupshared AABB GroupAABB_WS;		// frustum AABB in world space
 groupshared uint uDepthMask;		// Harada Siggraph 2012 2.5D culling
+groupshared uint tile_opaque[SHADER_ENTITY_TILE_BUCKET_COUNT];
+groupshared uint tile_transparent[SHADER_ENTITY_TILE_BUCKET_COUNT];
+#ifdef DEBUG_TILEDLIGHTCULLING
+groupshared uint entityCountDebug;
+#endif // DEBUG_TILEDLIGHTCULLING
 
-// Allow a bit more room for sorting, culling etc. in LDS and also deferred
-#define LDS_ENTITYCOUNT (MAX_SHADER_ENTITY_COUNT_PER_TILE * 2)
-
-// Opaque geometry entity lists.
-groupshared uint o_ArrayLength;
-groupshared uint o_Array[LDS_ENTITYCOUNT];
-groupshared uint o_decalCount;
-groupshared uint o_envmapCount;
-
-// Transparent geometry entity lists.
-groupshared uint t_ArrayLength;
-groupshared uint t_Array[LDS_ENTITYCOUNT];
-groupshared uint t_decalCount;
-groupshared uint t_envmapCount;
-
-// Add the entity to the visible entity list for opaque geometry.
-void o_AppendEntity(uint entityIndex)
+void AppendEntity_Opaque(uint entityIndex)
 {
-	uint index;
-	InterlockedAdd(o_ArrayLength, 1, index);
-	if (index < LDS_ENTITYCOUNT)
-	{
-		o_Array[index] = entityIndex;
-	}
+	const uint bucket_index = entityIndex / 32;
+	const uint bucket_place = entityIndex % 32;
+	InterlockedOr(tile_opaque[bucket_index], 1 << bucket_place);
+
+#ifdef DEBUG_TILEDLIGHTCULLING
+	InterlockedAdd(entityCountDebug, 1);
+#endif // DEBUG_TILEDLIGHTCULLING
 }
 
-// Add the entity to the visible entity list for transparent geometry.
-void t_AppendEntity(uint entityIndex)
+void AppendEntity_Transparent(uint entityIndex)
 {
-	uint index;
-	InterlockedAdd(t_ArrayLength, 1, index);
-	if (index < LDS_ENTITYCOUNT)
-	{
-		t_Array[index] = entityIndex;
-	}
-}
-
-// Decals NEED correct order, so a sorting is required on the LDS entity array!
-void o_BitonicSort( in uint localIdxFlattened )
-{
-	uint numArray = o_ArrayLength;
-
-	//// Round the number of entities up to the nearest power of two
-	//uint numArrayPowerOfTwo = 1;
-	//while( numArrayPowerOfTwo < numArray )
-	//	numArrayPowerOfTwo <<= 1;
-
-	// Optimized nearest power of two algorithm:
-	uint numArrayPowerOfTwo = 2 << firstbithigh(numArray - 1); // if numArray is 0, we don't even call this function, but watch out!
-
-	for( uint nMergeSize = 2; nMergeSize <= numArrayPowerOfTwo; nMergeSize = nMergeSize * 2 )
-	{
-		for( uint nMergeSubSize = nMergeSize >> 1; nMergeSubSize > 0; nMergeSubSize = nMergeSubSize >> 1 )
-		{
-			uint tmp_index = localIdxFlattened;
-			uint index_low = tmp_index & ( nMergeSubSize - 1 );
-			uint index_high = 2 * ( tmp_index - index_low );
-			uint index = index_high + index_low;
-
-			uint nSwapElem = nMergeSubSize == nMergeSize >> 1 ? index_high + ( 2 * nMergeSubSize - 1 ) - index_low : index_high + nMergeSubSize + index_low;
-			if( nSwapElem < numArray && index < numArray )
-			{
-				if( o_Array[ index ] < o_Array[ nSwapElem ] )
-				{
-					uint uTemp = o_Array[ index ];
-					o_Array[ index ] = o_Array[ nSwapElem ];
-					o_Array[ nSwapElem ] = uTemp;
-				}
-			}
-			GroupMemoryBarrierWithGroupSync();
-		}
-	}
-}
-void t_BitonicSort( in uint localIdxFlattened )
-{
-	uint numArray = t_ArrayLength;
-
-	//// Round the number of entities up to the nearest power of two
-	//uint numArrayPowerOfTwo = 1;
-	//while( numArrayPowerOfTwo < numArray )
-	//	numArrayPowerOfTwo <<= 1;
-
-	// Optimized nearest power of two algorithm:
-	uint numArrayPowerOfTwo = 2 << firstbithigh(numArray - 1); // if numArray is 0, we don't even call this function, but watch out!
-
-	for( uint nMergeSize = 2; nMergeSize <= numArrayPowerOfTwo; nMergeSize = nMergeSize * 2 )
-	{
-		for( uint nMergeSubSize = nMergeSize >> 1; nMergeSubSize > 0; nMergeSubSize = nMergeSubSize >> 1 )
-		{
-			uint tmp_index = localIdxFlattened;
-			uint index_low = tmp_index & ( nMergeSubSize - 1 );
-			uint index_high = 2 * ( tmp_index - index_low );
-			uint index = index_high + index_low;
-
-			uint nSwapElem = nMergeSubSize == nMergeSize >> 1 ? index_high + ( 2 * nMergeSubSize - 1 ) - index_low : index_high + nMergeSubSize + index_low;
-			if( nSwapElem < numArray && index < numArray )
-			{
-				if( t_Array[ index ] < t_Array[ nSwapElem ] )
-				{
-					uint uTemp = t_Array[ index ];
-					t_Array[ index ] = t_Array[ nSwapElem ];
-					t_Array[ nSwapElem ] = uTemp;
-				}
-			}
-			GroupMemoryBarrierWithGroupSync();
-		}
-	}
+	const uint bucket_index = entityIndex / 32;
+	const uint bucket_place = entityIndex % 32;
+	InterlockedOr(tile_transparent[bucket_index], 1 << bucket_place);
 }
 
 inline uint ConstructEntityMask(in float depthRangeMin, in float depthRangeRecip, in Sphere bounds)
@@ -181,34 +90,59 @@ inline uint ConstructEntityMask(in float depthRangeMin, in float depthRangeRecip
 	return uLightMask;
 }
 
-[numthreads(TILED_CULLING_BLOCKSIZE, TILED_CULLING_BLOCKSIZE, 1)]
+[numthreads(TILED_CULLING_THREADSIZE, TILED_CULLING_THREADSIZE, 1)]
 void main(ComputeShaderInput IN)
 {
-	// Calculate min & max depth in threadgroup / tile.
-	uint2 pixel = IN.dispatchThreadID.xy;
-	pixel = min(pixel, GetInternalResolution() - 1); // avoid loading from outside the texture, it messes up the min-max depth!
-	float depth = texture_depth[pixel];
+	// This controls the unrolling granularity if the blocksize and threadsize are different:
+	uint granularity = 0;
 
-	uint uDepth = asuint(depth);
+	// Reused loop counter:
+	uint i = 0;
 
-	if (IN.groupIndex == 0) // Avoid contention by other threads in the group.
+	// Compute addresses and load frustum:
+	const uint flatTileIndex = flatten2D(IN.groupID.xy, xDispatchParams_numThreadGroups.xy);
+	const uint tileBucketsAddress = flatTileIndex * SHADER_ENTITY_TILE_BUCKET_COUNT;
+	const uint bucketIndex = IN.groupIndex;
+	Frustum GroupFrustum = in_Frustums[flatTileIndex];
+
+	// Each thread will zero out one bucket in the LDS:
+	for (i = bucketIndex; i < SHADER_ENTITY_TILE_BUCKET_COUNT; i += TILED_CULLING_THREADSIZE * TILED_CULLING_THREADSIZE)
+	{
+		tile_opaque[i] = 0;
+		tile_transparent[i] = 0;
+	}
+
+	// First thread zeroes out other LDS data:
+	if (IN.groupIndex == 0)
 	{
 		uMinDepth = 0xffffffff;
 		uMaxDepth = 0;
-		o_ArrayLength = 0;
-		t_ArrayLength = 0;
-		o_decalCount = 0;
-		t_decalCount = 0;
-		o_envmapCount = 0;
-		t_envmapCount = 0;
-
 		uDepthMask = 0;
+
+#ifdef DEBUG_TILEDLIGHTCULLING
+		entityCountDebug = 0;
+#endif //  DEBUG_TILEDLIGHTCULLING
+	}
+
+	// Calculate min & max depth in threadgroup / tile.
+	float depth[TILED_CULLING_GRANULARITY * TILED_CULLING_GRANULARITY];
+	float depthMinUnrolled = 10000000;
+	float depthMaxUnrolled = -10000000;
+
+	[unroll]
+	for (granularity = 0; granularity < TILED_CULLING_GRANULARITY * TILED_CULLING_GRANULARITY; ++granularity)
+	{
+		uint2 pixel = IN.dispatchThreadID.xy * uint2(TILED_CULLING_GRANULARITY, TILED_CULLING_GRANULARITY) + unflatten2D(granularity, TILED_CULLING_GRANULARITY);
+		pixel = min(pixel, GetInternalResolution() - 1); // avoid loading from outside the texture, it messes up the min-max depth!
+		depth[granularity] = texture_depth[pixel];
+		depthMinUnrolled = min(depthMinUnrolled, depth[granularity]);
+		depthMaxUnrolled = max(depthMaxUnrolled, depth[granularity]);
 	}
 
 	GroupMemoryBarrierWithGroupSync();
 
-	InterlockedMin(uMinDepth, uDepth);
-	InterlockedMax(uMaxDepth, uDepth);
+	InterlockedMin(uMinDepth, asuint(depthMinUnrolled));
+	InterlockedMax(uMaxDepth, asuint(depthMaxUnrolled));
 
 	GroupMemoryBarrierWithGroupSync();
 
@@ -266,21 +200,23 @@ void main(ComputeShaderInput IN)
 	// We divide the minmax depth bounds to 32 equal slices
 	// then we mark the occupied depth slices with atomic or from each thread
 	// we do all this in linear (view) space
-	float realDepthVS = ScreenToView(float4(0, 0, depth, 1)).z;
 	const float __depthRangeRecip = 31.0f / (maxDepthVS - minDepthVS);
-	const uint __depthmaskcellindex = max(0, min(31, floor((realDepthVS - minDepthVS) * __depthRangeRecip)));
-	InterlockedOr(uDepthMask, 1 << __depthmaskcellindex);
+	uint __depthmaskUnrolled = 0;
+
+	[unroll]
+	for (granularity = 0; granularity < TILED_CULLING_GRANULARITY * TILED_CULLING_GRANULARITY; ++granularity)
+	{
+		float realDepthVS = ScreenToView(float4(0, 0, depth[granularity], 1)).z;
+		const uint __depthmaskcellindex = max(0, min(31, floor((realDepthVS - minDepthVS) * __depthRangeRecip)));
+		__depthmaskUnrolled |= 1 << __depthmaskcellindex;
+	}
+	InterlockedOr(uDepthMask, __depthmaskUnrolled);
 #endif
 
 	GroupMemoryBarrierWithGroupSync();
 
-	// It is better to load the frustum into register than LDS:
-	//	- AMD GCN will load this into SGPR because it is common to the group, VGPR will reduce, occupancy increases
-	Frustum GroupFrustum = in_Frustums[flatten2D(IN.groupID.xy, xDispatchParams_numThreadGroups.xy)];
-
-	// Cull entities
-	// Each thread in a group will cull 1 entity until all entities have been culled.
-	for (uint i = IN.groupIndex; i < entityCount; i += TILED_CULLING_BLOCKSIZE * TILED_CULLING_BLOCKSIZE)
+	// Each thread will cull one entity until all entities have been culled:
+	for (i = IN.groupIndex; i < entityCount; i += TILED_CULLING_THREADSIZE * TILED_CULLING_THREADSIZE)
 	{
 		ShaderEntityType entity = EntityArray[i];
 
@@ -296,17 +232,15 @@ void main(ComputeShaderInput IN)
 			Sphere sphere = { entity.positionVS.xyz, entity.range };
 			if (SphereInsideFrustum(sphere, GroupFrustum, nearClipVS, maxDepthVS))
 			{
-				// Add entity to entity list for transparent geometry.
-				t_AppendEntity(i);
+				AppendEntity_Transparent(i);
 
-				if (SphereIntersectsAABB(sphere, GroupAABB)) // tighter fit than just frustum culling
+				if (SphereIntersectsAABB(sphere, GroupAABB)) // tighter fit than sphere-frustum culling
 				{
-					// Add entity to entity list for opaque geometry.
 #ifdef ADVANCED_CULLING
 					if (uDepthMask & ConstructEntityMask(minDepthVS, __depthRangeRecip, sphere))
 #endif
 					{
-						o_AppendEntity(i);
+						AppendEntity_Opaque(i);
 					}
 				}
 			}
@@ -314,35 +248,20 @@ void main(ComputeShaderInput IN)
 		break;
 		case ENTITY_TYPE_SPOTLIGHT:
 		{
-			//// This is a cone culling for the spotlights:
-			//float coneRadius = tan(/*radians*/(entity.coneAngle)) * entity.range;
-			//Cone cone = { entity.positionVS.xyz, entity.range, -entity.directionVS.xyz, coneRadius };
-			//if (ConeInsideFrustum(cone, GroupFrustum, nearClipVS, maxDepthVS))
-			//{
-			//	// Add entity to entity list for transparent geometry.
-			//	t_AppendEntity(i);
-			//	if (!ConeInsidePlane(cone, minPlane))
-			//	{
-			//		// Add entity to entity list for opaque geometry.
-			//		o_AppendEntity(i);
-			//	}
-			//}
-
-			// Instead of cone culling, I construct a tight fitting sphere around the spotlight cone:
+			// Construct a tight fitting sphere around the spotlight cone:
 			const float r = entity.range * 0.5f / (entity.coneAngleCos * entity.coneAngleCos);
 			Sphere sphere = { entity.positionVS.xyz - entity.directionVS * r, r };
 			if (SphereInsideFrustum(sphere, GroupFrustum, nearClipVS, maxDepthVS))
 			{
-				// Add entity to entity list for transparent geometry.
-				t_AppendEntity(i);
+				AppendEntity_Transparent(i);
 
-				if (SphereIntersectsAABB(sphere, GroupAABB))
+				if (SphereIntersectsAABB(sphere, GroupAABB)) // tighter fit than sphere-frustum culling
 				{
 #ifdef ADVANCED_CULLING
 					if (uDepthMask & ConstructEntityMask(minDepthVS, __depthRangeRecip, sphere))
 #endif
 					{
-						o_AppendEntity(i);
+						AppendEntity_Opaque(i);
 					}
 				}
 
@@ -355,8 +274,8 @@ void main(ComputeShaderInput IN)
 		case ENTITY_TYPE_RECTANGLELIGHT:
 		case ENTITY_TYPE_TUBELIGHT:
 		{
-			t_AppendEntity(i);
-			o_AppendEntity(i);
+			AppendEntity_Transparent(i);
+			AppendEntity_Opaque(i);
 		}
 		break;
 		case ENTITY_TYPE_DECAL:
@@ -365,16 +284,7 @@ void main(ComputeShaderInput IN)
 			Sphere sphere = { entity.positionVS.xyz, entity.range };
 			if (SphereInsideFrustum(sphere, GroupFrustum, nearClipVS, maxDepthVS))
 			{
-				if (entity.GetType() == ENTITY_TYPE_DECAL)
-				{
-					InterlockedAdd(t_decalCount, 1);
-				}
-				else
-				{
-					InterlockedAdd(t_envmapCount, 1);
-				}
-
-				t_AppendEntity(i);
+				AppendEntity_Transparent(i);
 
 				// unit AABB: 
 				AABB a;
@@ -383,7 +293,7 @@ void main(ComputeShaderInput IN)
 
 				// frustum AABB in world space transformed into the space of the probe/decal OBB:
 				AABB b = GroupAABB_WS;
-				AABBtransform(b, MatrixArray[entity.additionalData_index]);
+				AABBtransform(b, MatrixArray[entity.userdata]);
 
 				if (IntersectAABB(a, b))
 				{
@@ -391,16 +301,7 @@ void main(ComputeShaderInput IN)
 					if (uDepthMask & ConstructEntityMask(minDepthVS, __depthRangeRecip, sphere))
 #endif
 					{
-						if (entity.GetType() == ENTITY_TYPE_DECAL)
-						{
-							InterlockedAdd(o_decalCount, 1);
-						}
-						else
-						{
-							InterlockedAdd(o_envmapCount, 1);
-						}
-
-						o_AppendEntity(i);
+						AppendEntity_Opaque(i);
 					}
 				}
 			}
@@ -409,208 +310,224 @@ void main(ComputeShaderInput IN)
 		}
 	}
 
-	// Wait till all threads in group have caught up.
 	GroupMemoryBarrierWithGroupSync();
 
-	const uint exportStartOffset = flatten2D(IN.groupID.xy, xDispatchParams_numThreadGroups.xy) * MAX_SHADER_ENTITY_COUNT_PER_TILE;
-
-	// Update global memory with visible entity buffer.
-	// First update the entity grid (only thread 0 in group needs to do this)
+	// Each thread will export one bucket from LDS to global memory:
+	for (i = bucketIndex; i < SHADER_ENTITY_TILE_BUCKET_COUNT; i += TILED_CULLING_THREADSIZE * TILED_CULLING_THREADSIZE)
+	{
 #ifndef DEFERRED
-	if (IN.groupIndex == 0)
-	{
-		o_EntityIndexList[exportStartOffset] = uint(min(o_ArrayLength & 0x000FFFFF, MAX_SHADER_ENTITY_COUNT_PER_TILE - 1) | ((o_decalCount & 0x000000FF) << 24) | ((o_envmapCount & 0x0000000F) << 20));
-	}
-	else 
+		EntityTiles_Opaque[tileBucketsAddress + i] = tile_opaque[i];
 #endif
-		if(IN.groupIndex == 1)
-	{
-		t_EntityIndexList[exportStartOffset] = uint(min(t_ArrayLength & 0x000FFFFF, MAX_SHADER_ENTITY_COUNT_PER_TILE - 1) | ((t_decalCount & 0x000000FF) << 24) | ((t_envmapCount & 0x0000000F) << 20));
-	}
-
-	// Decals and envmaps need sorting!
-	if (o_decalCount + o_envmapCount > 0)
-	{
-		o_BitonicSort(IN.groupIndex);
-	}
-	if (t_decalCount + t_envmapCount > 0)
-	{
-		t_BitonicSort(IN.groupIndex);
-	}
-
-	GroupMemoryBarrierWithGroupSync();
-
-	// Now update the entity index list (all threads).
-#ifndef DEFERRED
-	// For opaque geometry.
-	const uint o_clampedArrayLength = min(o_ArrayLength, MAX_SHADER_ENTITY_COUNT_PER_TILE - 1);
-	for (i = IN.groupIndex; i < o_clampedArrayLength; i += TILED_CULLING_BLOCKSIZE * TILED_CULLING_BLOCKSIZE)
-	{
-		o_EntityIndexList[exportStartOffset + 1 + i] = o_Array[i];
-	}
-#endif
-	// For transparent geometry.
-	const uint t_clampedArrayLength = min(t_ArrayLength, MAX_SHADER_ENTITY_COUNT_PER_TILE - 1);
-	for (i = IN.groupIndex; i < t_clampedArrayLength; i += TILED_CULLING_BLOCKSIZE * TILED_CULLING_BLOCKSIZE)
-	{
-		t_EntityIndexList[exportStartOffset + 1 + i] = t_Array[i];
+		EntityTiles_Transparent[tileBucketsAddress + i] = tile_transparent[i];
 	}
 
 #ifdef DEFERRED
-	// Light the pixels:
-	
-	float3 diffuse = 0, specular = 0;
-	float3 reflection = 0;
-	float4 g0 = texture_gbuffer0[pixel];
-	float4 baseColor = float4(g0.rgb, 1);
-	float ao = g0.a;
-	float4 g1 = texture_gbuffer1[pixel];
-	float4 g2 = texture_gbuffer2[pixel];
-	float3 N = decode(g1.xy);
-	float roughness = g2.x;
-	float reflectance = g2.y;
-	float metalness = g2.z;
-	float3 P = getPosition((float2)pixel * g_xFrame_InternalResolution_Inverse, depth);
-	float3 V = normalize(g_xFrame_MainCamera_CamPos - P);
-	Surface surface = CreateSurface(P, N, V, baseColor, roughness, reflectance, metalness);
+	// Do not unroll this loop because compiler will choke on it (force loop by introducing g_xFrame_ConstantOne from constant buffer because fxc doesn't respect [loop]):
+	[loop]
+	for (granularity = 0; granularity < TILED_CULLING_GRANULARITY * TILED_CULLING_GRANULARITY * g_xFrame_ConstantOne; ++granularity)
+	{
+		// Light the pixels:
+		uint2 pixel = IN.dispatchThreadID.xy * uint2(TILED_CULLING_GRANULARITY, TILED_CULLING_GRANULARITY) + unflatten2D(granularity, TILED_CULLING_GRANULARITY);
+		if (pixel.x >= (uint)GetInternalResolution().x || pixel.y >= (uint)GetInternalResolution().y)
+			continue;
 
-	uint iterator = 0;
-
-	iterator = o_decalCount;
-	// decals are not yet available here (need to r/w albedo), skip them for now...
+		float4 g0 = texture_gbuffer0[pixel];
+		float4 g1 = texture_gbuffer1[pixel];
+		float4 g2 = texture_gbuffer2[pixel];
+		float3 ld = deferred_Diffuse[pixel].rgb;
+		float3 ls = deferred_Specular[pixel].rgb;
+		float3 N = decode(g1.xy);
+		float3 P = getPosition((float2)pixel * g_xFrame_InternalResolution_Inverse, depth[granularity]);
+		float3 V = normalize(g_xFrame_MainCamera_CamPos - P);
+		Surface surface = CreateSurface(P, N, V, float4(g0.rgb, 1), g2.r, g2.g, g2.b, g2.a);
+		Lighting lighting = CreateLighting(0, ls, ld, 0);
 
 #ifndef DISABLE_ENVMAPS
-	// Apply environment maps:
+		// Apply environment maps:
+		float4 envmapAccumulation = 0;
+		const float envMapMIP = surface.roughness * g_xFrame_EnvProbeMipCount;
 
-	float4 envmapAccumulation = 0;
-	float envMapMIP = surface.roughness * g_xFrame_EnvProbeMipCount;
-
-#ifdef DISABLE_LOCALENVPMAPS
-	// local envmaps are disabled, set iterator to skip:
-	iterator += envmapCount;
-#else
-	// local envmaps are enabled, loop through them and apply:
-	uint envmapArrayEnd = iterator + o_envmapCount;
-
-	[loop]
-	for (; iterator < envmapArrayEnd; ++iterator)
-	{
-		ShaderEntityType probe = EntityArray[o_Array[iterator]];
-
-		float4x4 probeProjection = MatrixArray[probe.additionalData_index];
-		float3 clipSpacePos = mul(float4(surface.P, 1), probeProjection).xyz;
-		float3 uvw = clipSpacePos.xyz*float3(0.5f, -0.5f, 0.5f) + 0.5f;
+#ifndef DISABLE_LOCALENVPMAPS
 		[branch]
-		if (!any(uvw - saturate(uvw)))
+		if (g_xFrame_EnvProbeArrayCount > 0)
 		{
-			float4 envmapColor = EnvironmentReflection_Local(surface, probe, probeProjection, clipSpacePos, envMapMIP);
-			// perform manual blending of probes:
-			//  NOTE: they are sorted top-to-bottom, but blending is performed bottom-to-top
-			envmapAccumulation.rgb = (1 - envmapAccumulation.a) * (envmapColor.a * envmapColor.rgb) + envmapAccumulation.rgb;
-			envmapAccumulation.a = envmapColor.a + (1 - envmapColor.a) * envmapAccumulation.a;
-			// if the accumulation reached 1, we skip the rest of the probes:
-			iterator = envmapAccumulation.a < 1 ? iterator : envmapArrayEnd - 1;
+			// Loop through envprobe buckets in the tile:
+			const uint first_item = g_xFrame_EnvProbeArrayOffset;
+			const uint last_item = first_item + g_xFrame_EnvProbeArrayCount - 1;
+			const uint first_bucket = first_item / 32;
+			const uint last_bucket = min(last_item / 32, max(0, SHADER_ENTITY_TILE_BUCKET_COUNT - 1));
+			[loop]
+			for (uint bucket = first_bucket; bucket <= last_bucket; ++bucket)
+			{
+				uint bucket_bits = tile_opaque[bucket];
+
+				[loop]
+				while (bucket_bits != 0)
+				{
+					// Retrieve global entity index from local bucket, then remove bit from local bucket:
+					const uint bucket_bit_index = firstbitlow(bucket_bits);
+					const uint entity_index = bucket * 32 + bucket_bit_index;
+					bucket_bits ^= 1 << bucket_bit_index;
+
+					[branch]
+					if (entity_index >= first_item && entity_index <= last_item && envmapAccumulation.a < 1)
+					{
+						ShaderEntityType probe = EntityArray[entity_index];
+
+						const float4x4 probeProjection = MatrixArray[probe.userdata];
+						const float3 clipSpacePos = mul(float4(surface.P, 1), probeProjection).xyz;
+						const float3 uvw = clipSpacePos.xyz*float3(0.5f, -0.5f, 0.5f) + 0.5f;
+						[branch]
+						if (is_saturated(uvw))
+						{
+							const float4 envmapColor = EnvironmentReflection_Local(surface, probe, probeProjection, clipSpacePos, envMapMIP);
+							// perform manual blending of probes:
+							//  NOTE: they are sorted top-to-bottom, but blending is performed bottom-to-top
+							envmapAccumulation.rgb = (1 - envmapAccumulation.a) * (envmapColor.a * envmapColor.rgb) + envmapAccumulation.rgb;
+							envmapAccumulation.a = envmapColor.a + (1 - envmapColor.a) * envmapAccumulation.a;
+							[branch]
+							if (envmapAccumulation.a >= 1.0)
+							{
+								// force exit:
+								bucket = SHADER_ENTITY_TILE_BUCKET_COUNT;
+								break;
+							}
+						}
+					}
+					else if (entity_index > last_item)
+					{
+						// force exit:
+						bucket = SHADER_ENTITY_TILE_BUCKET_COUNT;
+						break;
+					}
+
+				}
+			}
 		}
-	}
 #endif // DISABLE_LOCALENVPMAPS
 
-	// Apply global envmap where there is no local envmap information:
-	if (envmapAccumulation.a < 0.99f)
-	{
-		envmapAccumulation.rgb = lerp(EnvironmentReflection_Global(surface, envMapMIP), envmapAccumulation.rgb, envmapAccumulation.a);
-	}
-
-	reflection = max(0, envmapAccumulation.rgb);
-
+		// Apply global envmap where there is no local envmap information:
+		[branch]
+		if (envmapAccumulation.a < 0.99f)
+		{
+			envmapAccumulation.rgb = lerp(EnvironmentReflection_Global(surface, envMapMIP), envmapAccumulation.rgb, envmapAccumulation.a);
+		}
+		lighting.indirect.specular += max(0, envmapAccumulation.rgb);
 #endif // DISABLE_ENVMAPS
 
+#ifndef DISABLE_VOXELGI
+		VoxelGI(surface, lighting);
+#endif //DISABLE_VOXELGI
 
+		[branch]
+		if (g_xFrame_LightArrayCount > 0)
+		{
+			// Loop through light buckets in the tile:
+			const uint first_item = g_xFrame_LightArrayOffset;
+			const uint last_item = first_item + g_xFrame_LightArrayCount - 1;
+			const uint first_bucket = first_item / 32;
+			const uint last_bucket = min(last_item / 32, max(0, SHADER_ENTITY_TILE_BUCKET_COUNT - 1));
+			[loop]
+			for (uint bucket = first_bucket; bucket <= last_bucket; ++bucket)
+			{
+				uint bucket_bits = tile_opaque[bucket];
 
-	[loop]
-	for (; iterator < o_ArrayLength; ++iterator)
-	{
-		uint entityIndex = o_Array[iterator];
-		ShaderEntityType light = EntityArray[entityIndex];
+				[loop]
+				while (bucket_bits != 0)
+				{
+					// Retrieve global entity index from local bucket, then remove bit from local bucket:
+					const uint bucket_bit_index = firstbitlow(bucket_bits);
+					const uint entity_index = bucket * 32 + bucket_bit_index;
+					bucket_bits ^= 1 << bucket_bit_index;
 
-		LightingResult result = (LightingResult)0;
+					[branch]
+					if (entity_index >= first_item && entity_index <= last_item)
+					{
+						ShaderEntityType light = EntityArray[entity_index];
 
-		switch (light.GetType())
-		{
-		case ENTITY_TYPE_DIRECTIONALLIGHT:
-		{
-			result = DirectionalLight(light, surface);
-		}
-		break;
-		case ENTITY_TYPE_POINTLIGHT:
-		{
-			result = PointLight(light, surface);
-		}
-		break;
-		case ENTITY_TYPE_SPOTLIGHT:
-		{
-			result = SpotLight(light, surface);
-		}
-		break;
-		case ENTITY_TYPE_SPHERELIGHT:
-		{
-			result = SphereLight(light, surface);
-		}
-		break;
-		case ENTITY_TYPE_DISCLIGHT:
-		{
-			result = DiscLight(light, surface);
-		}
-		break;
-		case ENTITY_TYPE_RECTANGLELIGHT:
-		{
-			result = RectangleLight(light, surface);
-		}
-		break;
-		case ENTITY_TYPE_TUBELIGHT:
-		{
-			result = TubeLight(light, surface);
-		}
-		break;
+						switch (light.GetType())
+						{
+						case ENTITY_TYPE_DIRECTIONALLIGHT:
+						{
+							DirectionalLight(light, surface, lighting);
+						}
+						break;
+						case ENTITY_TYPE_POINTLIGHT:
+						{
+							PointLight(light, surface, lighting);
+						}
+						break;
+						case ENTITY_TYPE_SPOTLIGHT:
+						{
+							SpotLight(light, surface, lighting);
+						}
+						break;
+						case ENTITY_TYPE_SPHERELIGHT:
+						{
+							SphereLight(light, surface, lighting);
+						}
+						break;
+						case ENTITY_TYPE_DISCLIGHT:
+						{
+							DiscLight(light, surface, lighting);
+						}
+						break;
+						case ENTITY_TYPE_RECTANGLELIGHT:
+						{
+							RectangleLight(light, surface, lighting);
+						}
+						break;
+						case ENTITY_TYPE_TUBELIGHT:
+						{
+							TubeLight(light, surface, lighting);
+						}
+						break;
+						}
+					}
+					else if (entity_index > last_item)
+					{
+						// force exit:
+						bucket = SHADER_ENTITY_TILE_BUCKET_COUNT;
+						break;
+					}
+
+				}
+			}
 		}
 
-		diffuse += max(0.0f, result.diffuse);
-		specular += max(0.0f, result.specular);
+		float2 ScreenCoord = (float2)pixel * g_xFrame_InternalResolution_Inverse;
+		float2 velocity = g1.zw;
+		float2 ReprojectedScreenCoord = ScreenCoord + velocity;
+		float4 ssr = xSSR.SampleLevel(sampler_linear_clamp, ReprojectedScreenCoord, 0);
+		lighting.indirect.specular = lerp(lighting.indirect.specular, ssr.rgb, ssr.a);
+
+		LightingPart combined_lighting = CombineLighting(surface, lighting);
+		deferred_Diffuse[pixel] = float4(combined_lighting.diffuse, 1);
+		deferred_Specular[pixel] = float4(combined_lighting.specular, 1);
 	}
-
-	VoxelGI(surface, diffuse, reflection, ao);
-
-	float2 ScreenCoord = (float2)pixel * g_xFrame_ScreenWidthHeight_Inverse;
-	float2 velocity = g1.zw;
-	float2 ReprojectedScreenCoord = ScreenCoord + velocity;
-	float ssao = xSSAO.SampleLevel(sampler_linear_clamp, ReprojectedScreenCoord, 0).r;
-	float4 ssr = xSSR.SampleLevel(sampler_linear_clamp, ReprojectedScreenCoord, 0);
-	reflection = lerp(reflection, ssr.rgb, ssr.a);
-
-	specular += reflection * surface.F;
-
-	float3 ambient = GetAmbient(N) * ao * ssao;
-	diffuse += ambient;
-
-	deferred_Diffuse[pixel] += float4(diffuse, 1);
-	deferred_Specular[pixel] += float4(specular, 1);
-
 #endif // DEFERRED
 
 #ifdef DEBUG_TILEDLIGHTCULLING
-	const float3 mapTex[] = {
-		float3(0,0,0),
-		float3(0,0,1),
-		float3(0,1,1),
-		float3(0,1,0),
-		float3(1,1,0),
-		float3(1,0,0),
-	};
-	const uint mapTexLen = 5;
-	const uint maxHeat = 50;
-	float l = saturate((float)o_ArrayLength / maxHeat) * mapTexLen;
-	float3 a = mapTex[floor(l)];
-	float3 b = mapTex[ceil(l)];
-	float4 heatmap = float4(lerp(a, b, l - floor(l)), 0.8);
-	DebugTexture[pixel] = heatmap;
-#endif
+	for (granularity = 0; granularity < TILED_CULLING_GRANULARITY * TILED_CULLING_GRANULARITY; ++granularity)
+	{
+		uint2 pixel = IN.dispatchThreadID.xy * uint2(TILED_CULLING_GRANULARITY, TILED_CULLING_GRANULARITY) + unflatten2D(granularity, TILED_CULLING_GRANULARITY);
+
+		const float3 mapTex[] = {
+			float3(0,0,0),
+			float3(0,0,1),
+			float3(0,1,1),
+			float3(0,1,0),
+			float3(1,1,0),
+			float3(1,0,0),
+		};
+		const uint mapTexLen = 5;
+		const uint maxHeat = 50;
+		float l = saturate((float)entityCountDebug / maxHeat) * mapTexLen;
+		float3 a = mapTex[floor(l)];
+		float3 b = mapTex[ceil(l)];
+		float4 heatmap = float4(lerp(a, b, l - floor(l)), 0.8);
+		DebugTexture[pixel] = heatmap;
+	}
+#endif // DEBUG_TILEDLIGHTCULLING
+
 }

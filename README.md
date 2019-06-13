@@ -1,4 +1,4 @@
-<img align="left" src="logo/logo_small.png" width="128px"/>
+<img align="left" src="images/logo_small.png" width="128px"/>
 
 # Wicked Engine
 
@@ -12,7 +12,7 @@
 [s2]: https://badges.gitter.im/WickedEngine/Lobby.svg
 [s3]: https://img.shields.io/badge/License-MIT-yellow.svg
 [s4]: https://img.shields.io/badge/download%20build-editor-blue.svg
-[s5]: https://img.shields.io/badge/download%20build-samples-blue.svg
+[s5]: https://img.shields.io/badge/download%20build-tests-blue.svg
 
 [av]: https://ci.appveyor.com/project/turanszkij/wickedengine
 [gi]: https://gitter.im/WickedEngine/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
@@ -21,10 +21,9 @@
 [dt]: https://ci.appveyor.com/api/projects/turanszkij/wickedengine/artifacts/WickedEngineTests.zip?branch=master
 [ba]: https://github.com/turanszkij/WickedEngine/tree/old-system-backup
 
-### Overview:
 
 Wicked Engine is an open-source game engine written in C++. The main focus is to be easy to set up and use, light weight, high performance, and graphically advanced.
-The full source code is provided with the MIT license, which means, anyone is free to use it for anything without additional considerations. The code shall not contain any parts with other licensing. The code is hosted on GitHub: https://github.com/turanszkij/WickedEngine For any questions, please open an issue there.
+The full source code is provided with the MIT license, which means, anyone is free to use it for anything without additional considerations. The code will not contain any parts with other licensing. The code is hosted on GitHub: https://github.com/turanszkij/WickedEngine For any questions, please open an issue there.
 
 From version <b>0.21.0</b> onwards, the engine was changed to use Entity-Component System and the old Object-Oriented system was dropped. <b>It is not backwards-compatible</b>, so assets/scripts made with the old system are unfortunately not usable.
 You can find a snapshot of the old Object-Oriented codebase (0.20.6) [here][ba], but it will not be updated anymore.
@@ -46,7 +45,7 @@ To test the engine, this solution contains several projects which you can build 
 - There are multiple sample LUA scripts in the "scripts" folder. You can load any of them inside the Editor, but please check how to use them first by reading the first few lines of the scripts.
 - Please open an Issue here on GitHub if you encounter any difficulties.
 
-![Emitter](https://turanszkij.files.wordpress.com/2018/11/emitter_skinned.gif) ![Drone](https://turanszkij.files.wordpress.com/2018/11/drone_anim.gif)
+![Emitter](https://turanszkij.files.wordpress.com/2019/02/emitterskinned2.gif) ![Drone](https://turanszkij.files.wordpress.com/2018/11/drone_anim.gif)
 
 The default renderer is DirectX 11. The DirectX 12 renderer is now available (experimental). Vulkan renderer is now available (experimental).
 You can specify command line arguments for each application to switch between render devices or other settings. Currently the list of options:
@@ -100,13 +99,14 @@ This feature is experimental, not tested thoroughly yet.
 
 ### Getting started: 
 
-The interface is designed to be somewhat similar to the XNA framework, with overridable Load, Update, Render methods, switchable rendering components, content managers and all together project structure. 
+The interface is designed to be somewhat similar to the XNA framework, with overridable Load, Update, Render methods, switchable rendering components, content managers. 
 However, it makes use of the C++ programming language instead of C#, which enables lower level and more performant code in the hand of experienced developers. On the other hand, the developer can also make use of the 
-widely popular Lua scripting language for faster iteration times and more flexible code structure.
+popular Lua scripting language for faster iteration times and more flexible code structure.
 
 Wicked Engine is provided as a static library. This means, that when creating a new project, the developer has to link against the compiled library before using its features. 
 For this, you must first compile the engine library project for the desired platform. For Windows Desktop, this is the WickedEngine_Windows project. 
-Then set the following dependencies to this library in Visual Studio this way in the implementing project:
+Then set the following dependencies to this library in Visual Studio this way in the implementing project (paths are as if your project is inside the engine root folder):
+<img align="right" src="https://turanszkij.files.wordpress.com/2018/05/sphinit.gif"/>
 
 1. Open Project Properties -> Configuration Properties
 2. C/C++ -> General -> Additional Include Directories: 
@@ -116,17 +116,94 @@ Then set the following dependencies to this library in Visual Studio this way in
 4. Also be sure to compile with a non-DLL runtime library for Release builds:
 	- Project settings -> C/C++ -> Code Generation -> Runtime Library -> Multi threaded
 	
-<img align="left" src="https://turanszkij.files.wordpress.com/2018/05/sphinit.gif"/>
-
 When your project settings are set up, time to #include "WickedEngine.h" in your source. I recommend to include this
-in the precompiled header file. This will enable the use of all the engine features and link the necessary binaries. After this, you should already be able to build your project. 
-But this will not render anything for you yet, because first you must initialize the engine. For this, you should create a main program component by deriving from MainComponent class of 
-Wicked Engine and initialize it appropriately by calling the SetWindow() and Run() functions inside the main message loop. 
-You should also ActivatePath() for the rendering to begin. You can see an example for this inside the Tests and Editor projects.
+in the precompiled header file. This will enable the use of all the engine features and link the necessary binaries. After this, you should already be able to build your project. If you are having difficulties, there are some projects that  you can compare against, such as the Editor, Tests or Template projects.
+Once the build is succesful, you can start using the engine. Here is some basic sample code, just to get an idea:
+
+Initialization example (C++):
+```
+// Include engine headers:
+#include "WickedEngine.h"
+
+// Declare main component once per application:
+MainComponent main;
+
+// If you want to render, interface with Windows API like this:
+main.SetWindow(hWnd, hInst);
+
+// Run the application:
+while(true) {
+   main.Run(); 
+}
+```
+
+Some basic usage examples (C++):
+```
+RenderPath3D_Deferred myGame; // Declare a game screen component, aka "RenderPath" (you could also override its Update(), Render() etc. functions). This is a 3D, Deferred path for example, but there are others
+main.ActivatePath(&myGame); // Register your game to the application. It will call Start(), Update(), Render(), etc. from now on...
+
+wiSceneSystem::LoadModel("myModel.wiscene"); // Simply load a model into the current global scene
+wiSceneSystem::GetScene(); // Get the current global scene
+wiRenderer::ClearWorld(); // Delete every model, etc. from the current global scene
+
+myGame.setSSAOEnabled(true); // You can enable post process effects this way...
+
+RenderPath2D myMenuScreen; // This is an other render path, but now a simple 2D one. It can only render 2D graphics by default (like a menu for example)
+main.ActivatePath(&myMenuScreen); // activate the menu, the previous path (myGame) will be stopped
+
+wiSprite mySprite("image.png"); // There are many utilities, such as a "sprite" helper class
+myMenuScreen.addSprite(&mySprite); // The 2D render path is ready to handle sprite and font rendering for you
+
+wiSoundEffect soundEffect("explosion.wav"); // you can load sound effects, or music
+soundEffect.Play(); // you can play sounds
+soundEffect.Stop(); // you can stop sounds
+
+wiMusic myMusic("music.wav"); // music is the same as sound effects, but they can be controlled independently
+myMusic.Play(); // plays a music
+wiMusic::SetVolume(0.5f); // set volume for every music, but don't modify sound effect volume
+
+if (wiInputManager::press(VK_SPACE)) { soundEffect.Stop(); } // You can check if a button is pressed or not (this only triggers once)
+if (wiInputManager::down(VK_SPACE)) { soundEffect.Play(); } // You can check if a button is pushed down or not (this triggers repeatedly)
+```
+
+Some scripting examples (LUA): <br/>
+(You can enter lua scripts into the backlog (HOME button), or the startup.lua script which is always executed on application startup if it is found near the app, or load a script via dofile("script.lua") command)
+```
+-- Set a rendering path for the application main component
+path = RenderPath3D_Deferred;
+main.SetActivePath(path);    -- "main" is created automatically
+
+-- Load a model entity:
+entity = LoadModel("myModel.wiscene");
+
+-- Get the current global scene:
+scene = GetScene();
+
+-- Move model to the right using the entity-component system:
+transform = scene.Component_GetTransform(entity);
+transform.Translate(Vector(2, 0, 0));
+
+-- Clear every model from the current global scene:
+ClearWorld();
+
+-- Print any WickedEngine class information to the backlog:
+getprops(main);    -- prints the main component methods
+getprops(scene);    -- prints the Scene class methods
+getprops(path);    -- prints the deferred render path methods
+
+-- Play a sound:
+sound = SoundEffect("whoosh.wav");
+sound.Play();
+
+-- Check for input:
+if(input.press(VK_LEFT)) then
+   sound.Play(); -- this will play the sound if you press the left arrow on the keyboard
+end
+```
+
+For more code samples and advanced use cases, please see the example projects, like the Template_Windows, Tests, or Editor project.
 
 If you want to create an UWP application, #define WINSTORE_SUPPORT preprocessor for the whole implementing project and link against the WickedEngine_UWP library.
-
-When everything is initialized properly, you should see a black screen. From this point, you can make an application by writing scripts in either C++ or Lua code. Please see the Tests project for such examples.
 
 <img align="right" src="https://turanszkij.files.wordpress.com/2018/11/hairparticle2.gif"/>
 
@@ -155,6 +232,43 @@ The Editor supports the importing of some common model formats (the list will po
 The Engine itself can open the serialized model format (<b>WISCENE</b>) only. The preferred workflow is to import models into the editor, and save them out to <b>WISCENE</b>, then any WickedEngine application can open them.<br/>
 The old Blender exporter script is now not supported! (from version 0.21.0)
 
-![Sponza](https://turanszkij.files.wordpress.com/2018/12/sponza.png)
-	
+### Take a look at some screenshots:
 
+Sponza scene with voxel GI enabled:
+![Sponza](https://turanszkij.files.wordpress.com/2018/12/sponza.png)
+
+Damaged Helmet GLTF sample model:
+![Sponza](https://turanszkij.files.wordpress.com/2019/03/damagedhelmet.png)
+
+City scene with a light map, model from <a href="https://www.cgtrader.com/michaelmilesgallie">Michael Gallie</a>:
+![City](https://turanszkij.files.wordpress.com/2019/01/city1.png)
+
+Path tracing in the city:
+![Balcony](https://turanszkij.files.wordpress.com/2019/01/city2.png)
+
+Path traced caustics:
+![Caustics](https://turanszkij.files.wordpress.com/2019/01/trace.png)
+
+Lots of instanced boxes with a light map:
+![Lightmap](https://turanszkij.files.wordpress.com/2019/01/lightmap.png)
+
+Lots of boxes path traced in the editor:
+![EditorBoxes](https://turanszkij.files.wordpress.com/2019/01/boxes.png)
+
+Bloom and post processing:
+![Bloom](https://turanszkij.files.wordpress.com/2019/01/bloom.png)
+
+Bistro scene from Amazon Lumberyard (from <a href="http://casual-effects.com/data/index.html">Morgan McGuire's graphics archive</a>):
+![Bloom](https://turanszkij.files.wordpress.com/2019/01/bistro_out_0.png)
+
+Bistro scene from the inside:
+![Bloom](https://turanszkij.files.wordpress.com/2019/01/bistro_in_2.png)
+
+Parallax occlusion mapping:
+![Bloom](https://turanszkij.files.wordpress.com/2019/01/pom.png)
+
+Large scale particle simulation on the GPU:
+![Bloom](https://turanszkij.files.wordpress.com/2019/01/gpuparticles3.png)
+
+Tiled light culling in the Bistro:
+![Bloom](https://turanszkij.files.wordpress.com/2019/02/bistro_heatmap-1.png)

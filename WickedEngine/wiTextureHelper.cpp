@@ -3,10 +3,11 @@
 #include "wiRandom.h"
 #include "wiColor.h"
 #include "wiBackLog.h"
+#include "wiSpinLock.h"
 
 #include <unordered_map>
 
-using namespace wiGraphicsTypes;
+using namespace wiGraphics;
 
 namespace wiTextureHelper
 {
@@ -19,8 +20,8 @@ namespace wiTextureHelper
 		HELPERTEXTURE_BLACKCUBEMAP,
 		HELPERTEXTURE_COUNT
 	};
-	wiGraphicsTypes::Texture2D* helperTextures[HELPERTEXTURE_COUNT] = {};
-	std::unordered_map<unsigned long, wiGraphicsTypes::Texture2D*> colorTextures;
+	wiGraphics::Texture2D helperTextures[HELPERTEXTURE_COUNT] = {};
+	std::unordered_map<unsigned long, wiGraphics::Texture2D*> colorTextures;
 	wiSpinLock colorlock;
 
 	void Initialize()
@@ -118,42 +119,42 @@ namespace wiTextureHelper
 		wiBackLog::post("wiTextureHelper Initialized");
 	}
 
-	Texture2D* getRandom64x64()
+	const Texture2D* getRandom64x64()
 	{
-		return helperTextures[HELPERTEXTURE_RANDOM64X64];
+		return &helperTextures[HELPERTEXTURE_RANDOM64X64];
 	}
 
-	Texture2D* getColorGradeDefault()
+	const Texture2D* getColorGradeDefault()
 	{
-		return helperTextures[HELPERTEXTURE_COLORGRADEDEFAULT];
+		return &helperTextures[HELPERTEXTURE_COLORGRADEDEFAULT];
 	}
 
-	Texture2D* getNormalMapDefault()
+	const Texture2D* getNormalMapDefault()
 	{
 		return getColor(wiColor(127, 127, 255, 255));
 	}
 
-	Texture2D* getBlackCubeMap()
+	const Texture2D* getBlackCubeMap()
 	{
-		return helperTextures[HELPERTEXTURE_BLACKCUBEMAP];
+		return &helperTextures[HELPERTEXTURE_BLACKCUBEMAP];
 	}
 
-	Texture2D* getWhite()
+	const Texture2D* getWhite()
 	{
 		return getColor(wiColor(255, 255, 255, 255));
 	}
 
-	Texture2D* getBlack()
+	const Texture2D* getBlack()
 	{
 		return getColor(wiColor(0, 0, 0, 255));
 	}
 
-	Texture2D* getTransparent()
+	const Texture2D* getTransparent()
 	{
 		return getColor(wiColor(0, 0, 0, 0));
 	}
 
-	Texture2D* getColor(const wiColor& color)
+	const Texture2D* getColor(const wiColor& color)
 	{
 		colorlock.lock();
 		auto it = colorTextures.find(color.rgba);
@@ -176,9 +177,10 @@ namespace wiTextureHelper
 			data[i + 3] = color.getA();
 		}
 
-		Texture2D* texture = nullptr;
-		if (FAILED(CreateTexture(texture, data, dim, dim)))
+		Texture2D* texture = new Texture2D;
+		if (FAILED(CreateTexture(*texture, data, dim, dim)))
 		{
+			delete texture;
 			return nullptr;
 		}
 
@@ -190,15 +192,13 @@ namespace wiTextureHelper
 	}
 
 
-	HRESULT CreateTexture(wiGraphicsTypes::Texture2D*& texture, const uint8_t* data, UINT width, UINT height, FORMAT format)
+	HRESULT CreateTexture(wiGraphics::Texture2D& texture, const uint8_t* data, UINT width, UINT height, FORMAT format)
 	{
 		if (data == nullptr)
 		{
 			return E_FAIL;
 		}
 		GraphicsDevice* device = wiRenderer::GetDevice();
-
-		SAFE_DELETE(texture);
 
 		TextureDesc textureDesc;
 		textureDesc.Width = width;

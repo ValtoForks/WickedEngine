@@ -23,6 +23,8 @@ public:
 	wiCheckBox* lensFlareCheckBox;
 	wiCheckBox* lightShaftsCheckBox;
 	wiCheckBox* ssaoCheckBox;
+	wiSlider*	ssaoRangeSlider;
+	wiSlider*	ssaoSampleCountSlider;
 	wiCheckBox* ssrCheckBox;
 	wiCheckBox* sssCheckBox;
 	wiCheckBox* eyeAdaptionCheckBox;
@@ -33,11 +35,13 @@ public:
 	wiCheckBox* bloomCheckBox;
 	wiSlider*	bloomStrengthSlider;
 	wiCheckBox* fxaaCheckBox;
-	wiCheckBox* stereogramCheckBox;
 	wiCheckBox* colorGradingCheckBox;
 	wiButton*	colorGradingButton;
 	wiCheckBox* sharpenFilterCheckBox;
 	wiSlider*	sharpenFilterAmountSlider;
+	wiCheckBox* outlineCheckBox;
+	wiSlider*	outlineThresholdSlider;
+	wiSlider*	outlineThicknessSlider;
 
 
 };

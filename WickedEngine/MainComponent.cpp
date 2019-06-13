@@ -20,9 +20,10 @@
 #include "wiGraphicsDevice_Vulkan.h"
 
 #include <sstream>
+#include <algorithm>
 
 using namespace std;
-using namespace wiGraphicsTypes;
+using namespace wiGraphics;
 
 MainComponent::~MainComponent()
 {
@@ -86,12 +87,7 @@ void MainComponent::ActivatePath(RenderPath* component, float fadeSeconds, const
 
 	// Fade manager will activate on fadeout
 	fadeManager.Clear();
-	fadeManager.Start(fadeSeconds, fadeColor, [this,component]() {
-
-		if (component == nullptr)
-		{
-			return;
-		}
+	fadeManager.Start(fadeSeconds, fadeColor, [this, component]() {
 
 		if (activePath != nullptr)
 		{
@@ -101,6 +97,8 @@ void MainComponent::ActivatePath(RenderPath* component, float fadeSeconds, const
 		component->Start();
 		activePath = component;
 	});
+
+	fadeManager.Update(0); // If user calls ActivatePath without fadeout, it will be instant
 }
 
 void MainComponent::Run()
@@ -115,7 +113,6 @@ void MainComponent::Run()
 	{
 		// Until engine is not loaded, present initialization screen...
 		wiRenderer::GetDevice()->PresentBegin();
-		wiFont::BindPersistentState(GRAPHICSTHREAD_IMMEDIATE);
 		wiFont(wiBackLog::getText(), wiFontParams(4, 4, infoDisplay.size)).Draw(GRAPHICSTHREAD_IMMEDIATE);
 		wiRenderer::GetDevice()->PresentEnd();
 		return;
@@ -124,23 +121,23 @@ void MainComponent::Run()
 	wiProfiler::BeginFrame();
 	wiProfiler::BeginRange("CPU Frame", wiProfiler::DOMAIN_CPU);
 
-	wiInputManager::Update();
-
-	deltaTime = float(max(0, timer.elapsed() / 1000.0));
+	deltaTime = float(std::max(0.0, timer.elapsed() / 1000.0));
 	timer.record();
 
 	if (wiWindowRegistration::IsWindowActive())
 	{
 		// If the application is active, run Update loops:
 
-		fadeManager.Update(deltaTime);
+		const float dt = framerate_lock ? (1.0f / targetFrameRate) : deltaTime;
+
+		fadeManager.Update(dt);
 
 		// Fixed time update:
 		wiProfiler::BeginRange("Fixed Update", wiProfiler::DOMAIN_CPU);
 		{
 			if (frameskip)
 			{
-				deltaTimeAccumulator += deltaTime;
+				deltaTimeAccumulator += dt;
 				if (deltaTimeAccumulator > 10)
 				{
 					// application probably lost control, fixed update would be take long
@@ -161,26 +158,24 @@ void MainComponent::Run()
 		}
 		wiProfiler::EndRange(); // Fixed Update
 
-		wiLua::GetGlobal()->SetDeltaTime(double(deltaTime));
-
 		// Variable-timed update:
 		wiProfiler::BeginRange("Update", wiProfiler::DOMAIN_CPU);
-		Update(deltaTime);
+		Update(dt);
 		wiProfiler::EndRange(); // Update
+
+		wiInputManager::Update();
+
+		wiProfiler::BeginRange("Render", wiProfiler::DOMAIN_CPU);
+		Render();
+		wiProfiler::EndRange(); // Render
 	}
 	else
 	{
 		// If the application is not active, disable Update loops:
 		deltaTimeAccumulator = 0;
-		wiLua::GetGlobal()->SetDeltaTime(0);
 	}
 
-	wiProfiler::BeginRange("Render", wiProfiler::DOMAIN_CPU);
-	Render();
-	wiProfiler::EndRange(); // Render
-
 	wiProfiler::EndRange(); // CPU Frame
-
 
 	wiProfiler::BeginRange("Compose", wiProfiler::DOMAIN_CPU);
 	wiRenderer::GetDevice()->PresentBegin();
@@ -201,12 +196,13 @@ void MainComponent::Run()
 
 void MainComponent::Update(float dt)
 {
+	wiLua::GetGlobal()->SetDeltaTime(double(dt));
+	wiLua::GetGlobal()->Update();
+
 	if (GetActivePath() != nullptr)
 	{
 		GetActivePath()->Update(dt);
 	}
-
-	wiLua::GetGlobal()->Update();
 }
 
 void MainComponent::FixedUpdate()
@@ -225,9 +221,6 @@ void MainComponent::Render()
 	wiLua::GetGlobal()->Render();
 
 	wiProfiler::BeginRange("GPU Frame", wiProfiler::DOMAIN_GPU, GRAPHICSTHREAD_IMMEDIATE);
-	wiRenderer::BindPersistentState(GRAPHICSTHREAD_IMMEDIATE);
-	wiImage::BindPersistentState(GRAPHICSTHREAD_IMMEDIATE);
-	wiFont::BindPersistentState(GRAPHICSTHREAD_IMMEDIATE);
 	if (GetActivePath() != nullptr)
 	{
 		GetActivePath()->Render();
@@ -278,6 +271,10 @@ void MainComponent::Compose()
 #ifdef _DEBUG
 			ss << "[DEBUG]";
 #endif
+			if (wiRenderer::GetDevice()->IsDebugDevice())
+			{
+				ss << "[debugdevice]";
+			}
 			ss << endl;
 		}
 		if (infoDisplay.resolution)
@@ -288,6 +285,13 @@ void MainComponent::Compose()
 		{
 			ss.precision(2);
 			ss << fixed << 1.0f / deltaTime << " FPS" << endl;
+#ifdef _DEBUG
+			ss << "Warning: This is a [DEBUG] build, performance will be slow!" << endl;
+#endif
+			if (wiRenderer::GetDevice()->IsDebugDevice())
+			{
+				ss << "Warning: Graphics is in [debugdevice] mode, performance will be slow!" << endl;
+			}
 		}
 		ss.precision(2);
 		wiFont(ss.str(), wiFontParams(4, 4, infoDisplay.size, WIFALIGN_LEFT, WIFALIGN_TOP, 0, 0, wiColor(255,255,255,255), wiColor(0,0,0,255))).Draw(GRAPHICSTHREAD_IMMEDIATE);
@@ -299,20 +303,15 @@ void MainComponent::Compose()
 }
 
 #ifndef WINSTORE_SUPPORT
-bool MainComponent::SetWindow(wiWindowRegistration::window_type window, HINSTANCE hInst)
+void MainComponent::SetWindow(wiWindowRegistration::window_type window, HINSTANCE hInst)
 {
-	this->hInst = hInst;
-
+	wiWindowRegistration::RegisterInstance(hInst);
 	wiWindowRegistration::RegisterWindow(window);
-
-	return true;
 }
 #else
-bool MainComponent::SetWindow(wiWindowRegistration::window_type window)
+void MainComponent::SetWindow(wiWindowRegistration::window_type window)
 {
 	wiWindowRegistration::RegisterWindow(window);
-
-	return true;
 }
 #endif
 

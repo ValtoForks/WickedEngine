@@ -10,43 +10,43 @@ struct RAY;
 namespace wiRenderer
 {
 	// Common render target formats:
-	static const wiGraphicsTypes::FORMAT RTFormat_ldr = wiGraphicsTypes::FORMAT_R8G8B8A8_UNORM;
-	static const wiGraphicsTypes::FORMAT RTFormat_hdr = wiGraphicsTypes::FORMAT_R16G16B16A16_FLOAT;
-	static const wiGraphicsTypes::FORMAT RTFormat_gbuffer_0 = wiGraphicsTypes::FORMAT_R8G8B8A8_UNORM;
-	static const wiGraphicsTypes::FORMAT RTFormat_gbuffer_1 = wiGraphicsTypes::FORMAT_R16G16B16A16_FLOAT;
-	static const wiGraphicsTypes::FORMAT RTFormat_gbuffer_2 = wiGraphicsTypes::FORMAT_R8G8B8A8_UNORM;
-	static const wiGraphicsTypes::FORMAT RTFormat_deferred_lightbuffer = wiGraphicsTypes::FORMAT_R11G11B10_FLOAT;
-	static const wiGraphicsTypes::FORMAT RTFormat_lineardepth = wiGraphicsTypes::FORMAT_R16_UNORM;
-	static const wiGraphicsTypes::FORMAT RTFormat_ssao = wiGraphicsTypes::FORMAT_R8_UNORM;
-	static const wiGraphicsTypes::FORMAT RTFormat_waterripple = wiGraphicsTypes::FORMAT_R8G8B8A8_SNORM;
-	static const wiGraphicsTypes::FORMAT RTFormat_normalmaps = wiGraphicsTypes::FORMAT_R8G8B8A8_SNORM;
-	static const wiGraphicsTypes::FORMAT RTFormat_depthresolve = wiGraphicsTypes::FORMAT_R32_FLOAT;
-	static const wiGraphicsTypes::FORMAT RTFormat_voxelradiance = wiGraphicsTypes::FORMAT_R16G16B16A16_FLOAT;
-	static const wiGraphicsTypes::FORMAT RTFormat_envprobe = wiGraphicsTypes::FORMAT_R16G16B16A16_FLOAT;
-	static const wiGraphicsTypes::FORMAT RTFormat_impostor = wiGraphicsTypes::FORMAT_R8G8B8A8_UNORM;
-	static const wiGraphicsTypes::FORMAT RTFormat_lightmap_object = wiGraphicsTypes::FORMAT_R32G32B32A32_FLOAT;
-	static const wiGraphicsTypes::FORMAT RTFormat_lightmap_global = wiGraphicsTypes::FORMAT_R11G11B10_FLOAT;
+	static const wiGraphics::FORMAT RTFormat_ldr = wiGraphics::FORMAT_R8G8B8A8_UNORM;
+	static const wiGraphics::FORMAT RTFormat_hdr = wiGraphics::FORMAT_R16G16B16A16_FLOAT;
+	static const wiGraphics::FORMAT RTFormat_gbuffer_0 = wiGraphics::FORMAT_R8G8B8A8_UNORM;
+	static const wiGraphics::FORMAT RTFormat_gbuffer_1 = wiGraphics::FORMAT_R16G16B16A16_FLOAT;
+	static const wiGraphics::FORMAT RTFormat_gbuffer_2 = wiGraphics::FORMAT_R8G8B8A8_UNORM;
+	static const wiGraphics::FORMAT RTFormat_deferred_lightbuffer = wiGraphics::FORMAT_R11G11B10_FLOAT;
+	static const wiGraphics::FORMAT RTFormat_lineardepth = wiGraphics::FORMAT_R16_UNORM;
+	static const wiGraphics::FORMAT RTFormat_ssao = wiGraphics::FORMAT_R8_UNORM;
+	static const wiGraphics::FORMAT RTFormat_waterripple = wiGraphics::FORMAT_R8G8B8A8_SNORM;
+	static const wiGraphics::FORMAT RTFormat_normalmaps = wiGraphics::FORMAT_R8G8B8A8_SNORM;
+	static const wiGraphics::FORMAT RTFormat_depthresolve = wiGraphics::FORMAT_R32_FLOAT;
+	static const wiGraphics::FORMAT RTFormat_voxelradiance = wiGraphics::FORMAT_R16G16B16A16_FLOAT;
+	static const wiGraphics::FORMAT RTFormat_envprobe = wiGraphics::FORMAT_R11G11B10_FLOAT;
+	static const wiGraphics::FORMAT RTFormat_impostor = wiGraphics::FORMAT_R8G8B8A8_UNORM;
+	static const wiGraphics::FORMAT RTFormat_lightmap_object = wiGraphics::FORMAT_R32G32B32A32_FLOAT;
+	static const wiGraphics::FORMAT RTFormat_lightmap_global = wiGraphics::FORMAT_R11G11B10_FLOAT;
 
-	static const wiGraphicsTypes::FORMAT DSFormat_full = wiGraphicsTypes::FORMAT_D32_FLOAT_S8X24_UINT;
-	static const wiGraphicsTypes::FORMAT DSFormat_full_alias = wiGraphicsTypes::FORMAT_R32G8X24_TYPELESS;
-	static const wiGraphicsTypes::FORMAT DSFormat_small = wiGraphicsTypes::FORMAT_D16_UNORM;
-	static const wiGraphicsTypes::FORMAT DSFormat_small_alias = wiGraphicsTypes::FORMAT_R16_TYPELESS;
+	static const wiGraphics::FORMAT DSFormat_full = wiGraphics::FORMAT_D32_FLOAT_S8X24_UINT;
+	static const wiGraphics::FORMAT DSFormat_full_alias = wiGraphics::FORMAT_R32G8X24_TYPELESS;
+	static const wiGraphics::FORMAT DSFormat_small = wiGraphics::FORMAT_D16_UNORM;
+	static const wiGraphics::FORMAT DSFormat_small_alias = wiGraphics::FORMAT_R16_TYPELESS;
 
-	wiGraphicsTypes::Sampler* GetSampler(int slot);
-	wiGraphicsTypes::VertexShader* GetVertexShader(VSTYPES id);
-	wiGraphicsTypes::HullShader* GetHullShader(VSTYPES id);
-	wiGraphicsTypes::DomainShader* GetDomainShader(VSTYPES id);
-	wiGraphicsTypes::GeometryShader* GetGeometryShader(VSTYPES id);
-	wiGraphicsTypes::PixelShader* GetPixelShader(PSTYPES id);
-	wiGraphicsTypes::ComputeShader* GetComputeShader(PSTYPES id);
-	wiGraphicsTypes::VertexLayout* GetVertexLayout(VLTYPES id);
-	wiGraphicsTypes::RasterizerState* GetRasterizerState(RSTYPES id);
-	wiGraphicsTypes::DepthStencilState* GetDepthStencilState(DSSTYPES id);
-	wiGraphicsTypes::BlendState* GetBlendState(BSTYPES id);
-	wiGraphicsTypes::GPUBuffer* GetConstantBuffer(CBTYPES id);
-	wiGraphicsTypes::Texture* GetTexture(TEXTYPES id);
+	const wiGraphics::Sampler* GetSampler(int slot);
+	const wiGraphics::VertexShader* GetVertexShader(VSTYPES id);
+	const wiGraphics::HullShader* GetHullShader(VSTYPES id);
+	const wiGraphics::DomainShader* GetDomainShader(VSTYPES id);
+	const wiGraphics::GeometryShader* GetGeometryShader(VSTYPES id);
+	const wiGraphics::PixelShader* GetPixelShader(PSTYPES id);
+	const wiGraphics::ComputeShader* GetComputeShader(PSTYPES id);
+	const wiGraphics::VertexLayout* GetVertexLayout(VLTYPES id);
+	const wiGraphics::RasterizerState* GetRasterizerState(RSTYPES id);
+	const wiGraphics::DepthStencilState* GetDepthStencilState(DSSTYPES id);
+	const wiGraphics::BlendState* GetBlendState(BSTYPES id);
+	const wiGraphics::GPUBuffer* GetConstantBuffer(CBTYPES id);
+	const wiGraphics::Texture* GetTexture(TEXTYPES id);
 
-	void ModifySampler(const wiGraphicsTypes::SamplerDesc& desc, int slot);
+	void ModifySampler(const wiGraphics::SamplerDesc& desc, int slot);
 
 
 	void Initialize();
@@ -57,31 +57,31 @@ namespace wiRenderer
 	void ClearWorld();
 
 	// Set the main graphics device globally:
-	void SetDevice(wiGraphicsTypes::GraphicsDevice* newDevice);
+	void SetDevice(wiGraphics::GraphicsDevice* newDevice);
 	// Retrieve the main graphics device:
-	wiGraphicsTypes::GraphicsDevice* GetDevice();
+	wiGraphics::GraphicsDevice* GetDevice();
 
 	// Returns the shader path that you can also modify
 	std::string& GetShaderPath();
 	// Reload shaders, use the argument to modify the shader path. If the argument is empty, the shader path will not be modified
 	void ReloadShaders(const std::string& path = "");
 
-	// Returns the main scene which is currently being used in rendering
-	wiSceneSystem::Scene& GetScene();
 	// Returns the main camera that is currently being used in rendering (and also for post processing)
 	wiSceneSystem::CameraComponent& GetCamera();
 	// Returns the previous frame's camera that is currently being used in rendering to reproject
 	wiSceneSystem::CameraComponent& GetPrevCamera();
 	// Returns the planar reflection camera that is currently being used in rendering
 	wiSceneSystem::CameraComponent& GetRefCamera();
+	// Attach camera to entity for the current frame
+	void AttachCamera(wiECS::Entity entity);
 
-	// Updates the main scene, performs frustum culling for main camera and other tasks that are only done once per frame
-	void UpdatePerFrameData(float dt);
+	// Updates the main scene, performs frustum culling for main camera and other tasks that are only done once per frame. Specify layerMask to only include specific entities in the render frame.
+	void UpdatePerFrameData(float dt, uint32_t layerMask = ~0);
 	// Updates the GPU state according to the previously called UpatePerFrameData()
 	void UpdateRenderData(GRAPHICSTHREAD threadID);
 
-	// Binds all persistent constant buffers, samplers that can used globally in all shaders for a whole frame
-	void BindPersistentState(GRAPHICSTHREAD threadID);
+	// Binds all common constant buffers and samplers that may be used in all shaders
+	void BindCommonResources(GRAPHICSTHREAD threadID);
 	// Updates the per frame constant buffer (need to call at least once per frame)
 	void UpdateFrameCB(GRAPHICSTHREAD threadID);
 	// Updates the per camera constant buffer need to call for each different camera that is used when calling DrawScene() and the like
@@ -93,20 +93,27 @@ namespace wiRenderer
 	// Resets the global shader alpha reference value to float g_xAlphaRef = 0.75f
 	inline void ResetAlphaRef(GRAPHICSTHREAD threadID) { SetAlphaRef(0.75f, threadID); }
 	// Binds the gbuffer textures that will be used in deferred rendering, or thin gbuffer in case of forward rendering
-	void BindGBufferTextures(wiGraphicsTypes::Texture2D* slot0, wiGraphicsTypes::Texture2D* slot1, wiGraphicsTypes::Texture2D* slot2, GRAPHICSTHREAD threadID);
+	void BindGBufferTextures(
+		const wiGraphics::Texture2D* slot0, 
+		const wiGraphics::Texture2D* slot1, 
+		const wiGraphics::Texture2D* slot2, 
+		GRAPHICSTHREAD threadID);
 	// Binds the hardware depth buffer and a linear depth buffer to be read by shaders
-	void BindDepthTextures(wiGraphicsTypes::Texture2D* depth, wiGraphicsTypes::Texture2D* linearDepth, GRAPHICSTHREAD threadID);
+	void BindDepthTextures(
+		const wiGraphics::Texture2D* depth, 
+		const wiGraphics::Texture2D* linearDepth, 
+		GRAPHICSTHREAD threadID);
 
 	// Draw skydome centered to camera. Its color will be either dynamically computed, or the global environment map will be used if you called SetEnvironmentMap()
 	void DrawSky(GRAPHICSTHREAD threadID);
 	// A black skydome will be draw with only the sun being visible on it
 	void DrawSun(GRAPHICSTHREAD threadID);
 	// Draw the world from a camera. You must call UpdateCameraCB() at least once in this frame prior to this
-	void DrawScene(const wiSceneSystem::CameraComponent& camera, bool tessellation, GRAPHICSTHREAD threadID, SHADERTYPE shaderType, bool grass, bool occlusionCulling, uint32_t layerMask = 0xFFFFFFFF);
+	void DrawScene(const wiSceneSystem::CameraComponent& camera, bool tessellation, GRAPHICSTHREAD threadID, RENDERPASS renderPass, bool grass, bool occlusionCulling);
 	// Draw the transparent world from a camera. You must call UpdateCameraCB() at least once in this frame prior to this
-	void DrawScene_Transparent(const wiSceneSystem::CameraComponent& camera, SHADERTYPE shaderType, GRAPHICSTHREAD threadID, bool grass, bool occlusionCulling, uint32_t layerMask = 0xFFFFFFFF);
+	void DrawScene_Transparent(const wiSceneSystem::CameraComponent& camera, RENDERPASS renderPass, GRAPHICSTHREAD threadID, bool grass, bool occlusionCulling);
 	// Draw shadow maps for each visible light that has associated shadow maps
-	void DrawForShadowMap(const wiSceneSystem::CameraComponent& camera, GRAPHICSTHREAD threadID, uint32_t layerMask = 0xFFFFFFFF);
+	void DrawForShadowMap(const wiSceneSystem::CameraComponent& camera, GRAPHICSTHREAD threadID, uint32_t layerMask = ~0);
 	// Draw debug world. You must also enable what parts to draw, eg. SetToDrawGridHelper, etc, see implementation for details what can be enabled.
 	void DrawDebugWorld(const wiSceneSystem::CameraComponent& camera, GRAPHICSTHREAD threadID);
 	// Draw Soft offscreen particles. Linear depth should be already readable (see BindDepthTextures())
@@ -118,24 +125,34 @@ namespace wiRenderer
 	// Draw volumetric light scattering effects. Linear depth should be already readable (see BindDepthTextures())
 	void DrawVolumeLights(const wiSceneSystem::CameraComponent& camera, GRAPHICSTHREAD threadID);
 	// Draw Lens Flares for lights that have them enabled. Linear depth should be already readable (see BindDepthTextures())
-	void DrawLensFlares(GRAPHICSTHREAD threadID);
+	void DrawLensFlares(const wiSceneSystem::CameraComponent& camera, GRAPHICSTHREAD threadID);
 	// Draw deferred decals. Gbuffer and depth textures should already be readable (see BindGBufferTextures(), BindDepthTextures())
 	void DrawDecals(const wiSceneSystem::CameraComponent& camera, GRAPHICSTHREAD threadID);
 	// Call once per frame to re-render out of date environment probes
 	void RefreshEnvProbes(GRAPHICSTHREAD threadID);
 	// Call once per frame to re-render out of date impostors
 	void RefreshImpostors(GRAPHICSTHREAD threadID);
+	// Call once per frame to repack out of date decals in the atlas
+	void RefreshDecalAtlas(GRAPHICSTHREAD threadID);
+	// Call once per frame to repack out of date lightmaps in the atlas
+	void RefreshLightmapAtlas(GRAPHICSTHREAD threadID);
 	// Voxelize the scene into a voxel grid 3D texture
 	void VoxelRadiance(GRAPHICSTHREAD threadID);
 	// Compute light grid tiles for tiled rendering paths
 	//	If you specify lightbuffers (diffuse, specular), then a tiled deferred lighting will be computed as well. Otherwise, only the light grid gets computed
-	void ComputeTiledLightCulling(GRAPHICSTHREAD threadID, wiGraphicsTypes::Texture2D* lightbuffer_diffuse = nullptr, wiGraphicsTypes::Texture2D* lightbuffer_specular = nullptr);
+	void ComputeTiledLightCulling(GRAPHICSTHREAD threadID, 
+		const wiGraphics::Texture2D* lightbuffer_diffuse = nullptr, 
+		const wiGraphics::Texture2D* lightbuffer_specular = nullptr);
 	// Run a compute shader that will resolve a MSAA depth buffer to a single-sample texture
-	void ResolveMSAADepthBuffer(wiGraphicsTypes::Texture2D* dst, wiGraphicsTypes::Texture2D* src, GRAPHICSTHREAD threadID);
+	void ResolveMSAADepthBuffer(const wiGraphics::Texture2D* dst, const wiGraphics::Texture2D* src, GRAPHICSTHREAD threadID);
 	// Build the scene BVH on GPU that can be used by ray traced rendering
 	void BuildSceneBVH(GRAPHICSTHREAD threadID);
 	// Render the scene with ray tracing only
-	void DrawTracedScene(const wiSceneSystem::CameraComponent& camera, wiGraphicsTypes::Texture2D* result, GRAPHICSTHREAD threadID);
+	void DrawTracedScene(const wiSceneSystem::CameraComponent& camera, const wiGraphics::Texture2D* result, GRAPHICSTHREAD threadID);
+	// Render the scene BVH with ray tracing
+	void DrawTracedSceneBVH(GRAPHICSTHREAD threadID);
+	// Compute the luminance for the source image and return the texture containing the luminance value in pixel [0,0]
+	const wiGraphics::Texture2D* ComputeLuminance(const wiGraphics::Texture2D* sourceImage, GRAPHICSTHREAD threadID);
 
 	// Render occluders against a depth buffer
 	void OcclusionCulling_Render(GRAPHICSTHREAD threadID);
@@ -153,9 +170,9 @@ namespace wiRenderer
 		MIPGENFILTER_GAUSSIAN,
 		MIPGENFILTER_BICUBIC,
 	};
-	void GenerateMipChain(wiGraphicsTypes::Texture1D* texture, MIPGENFILTER filter, GRAPHICSTHREAD threadID, int arrayIndex = -1);
-	void GenerateMipChain(wiGraphicsTypes::Texture2D* texture, MIPGENFILTER filter, GRAPHICSTHREAD threadID, int arrayIndex = -1);
-	void GenerateMipChain(wiGraphicsTypes::Texture3D* texture, MIPGENFILTER filter, GRAPHICSTHREAD threadID, int arrayIndex = -1);
+	void GenerateMipChain(const wiGraphics::Texture1D* texture, MIPGENFILTER filter, GRAPHICSTHREAD threadID, int arrayIndex = -1);
+	void GenerateMipChain(const wiGraphics::Texture2D* texture, MIPGENFILTER filter, GRAPHICSTHREAD threadID, int arrayIndex = -1);
+	void GenerateMipChain(const wiGraphics::Texture3D* texture, MIPGENFILTER filter, GRAPHICSTHREAD threadID, int arrayIndex = -1);
 
 	enum BORDEREXPANDSTYLE
 	{
@@ -165,18 +182,25 @@ namespace wiRenderer
 	};
 	// Performs copy operation even between different texture formats
 	//	Can also expand border region according to desired sampler func
-	void CopyTexture2D(wiGraphicsTypes::Texture2D* dst, UINT DstMIP, UINT DstX, UINT DstY, wiGraphicsTypes::Texture2D* src, UINT SrcMIP, GRAPHICSTHREAD threadID,
+	void CopyTexture2D(
+		const wiGraphics::Texture2D* dst, UINT DstMIP, UINT DstX, UINT DstY, 
+		const wiGraphics::Texture2D* src, UINT SrcMIP, 
+		GRAPHICSTHREAD threadID,
 		BORDEREXPANDSTYLE borderExpand = BORDEREXPAND_DISABLE);
 
 	// dst: Texture2D with unordered access, the output will be written to this
 	// refinementCount: 0: auto select, 1: perfect noise, greater numbers: smoother clouds, slower processing
 	// randomness: random seed
-	void GenerateClouds(wiGraphicsTypes::Texture2D* dst, UINT refinementCount, float randomness, GRAPHICSTHREAD threadID);
+	void GenerateClouds(const wiGraphics::Texture2D* dst, UINT refinementCount, float randomness, GRAPHICSTHREAD threadID);
 
+	// Assign texture slots to out of date environemnt probes
+	void ManageEnvProbes();
+	// Invalidate out of date impostors
+	void ManageImpostors();
 	// New decals will be packed into a texture atlas
-	void ManageDecalAtlas(GRAPHICSTHREAD threadID);
+	void ManageDecalAtlas();
 	// New lightmapped objects will be packed into global lightmap atlas
-	void ManageLightmapAtlas(GRAPHICSTHREAD threadID);
+	void ManageLightmapAtlas();
 
 	void PutWaterRipple(const std::string& image, const XMFLOAT3& pos);
 	void ManageWaterRipples();
@@ -256,42 +280,23 @@ namespace wiRenderer
 	void SetAdvancedRefractionsEnabled(bool value);
 	bool GetAdvancedRefractionsEnabled();
 	bool IsRequestedReflectionRendering();
-	void SetEnvironmentMap(wiGraphicsTypes::Texture2D* tex);
-	wiGraphicsTypes::Texture2D* GetEnvironmentMap();
-	wiGraphicsTypes::Texture2D* GetLuminance(wiGraphicsTypes::Texture2D* sourceImage, GRAPHICSTHREAD threadID);
+	void SetEnvironmentMap(wiGraphics::Texture2D* tex);
+	const wiGraphics::Texture2D* GetEnvironmentMap();
 	const XMFLOAT4& GetWaterPlane();
 	void SetGameSpeed(float value);
 	float GetGameSpeed();
 	void SetOceanEnabled(bool enabled);
 	bool GetOceanEnabled();
 	void InvalidateBVH(); // invalidates scene bvh so if something wants to use it, it will recompute and validate it
-	void SetLightmapBakeBounceCount(uint32_t bounces);
-	uint32_t GetLightmapBakeBounceCount();
+	void SetRaytraceBounceCount(uint32_t bounces);
+	uint32_t GetRaytraceBounceCount();
+	void SetRaytraceDebugBVHVisualizerEnabled(bool value);
+	bool GetRaytraceDebugBVHVisualizerEnabled();
 
-	wiGraphicsTypes::Texture2D* GetGlobalLightmap();
+	const wiGraphics::Texture2D* GetGlobalLightmap();
 
 	// Gets pick ray according to the current screen resolution and pointer coordinates. Can be used as input into RayIntersectWorld()
 	RAY GetPickRay(long cursorX, long cursorY);
-
-	struct RayIntersectWorldResult
-	{
-		wiECS::Entity entity = wiECS::INVALID_ENTITY;
-		XMFLOAT3 position = XMFLOAT3(0, 0, 0);
-		XMFLOAT3 normal = XMFLOAT3(0, 0, 0);
-		float distance = FLT_MAX;
-		int subsetIndex = -1;
-		int vertexID0 = -1;
-		int vertexID1 = -1;
-		int vertexID2 = -1;
-		XMFLOAT4X4 orientation = IDENTITYMATRIX;
-
-		bool operator==(const RayIntersectWorldResult& other)
-		{
-			return entity == other.entity;
-		}
-	};
-	// Given a ray, finds the closest intersection point against all instances
-	RayIntersectWorldResult RayIntersectWorld(const RAY& ray, UINT renderTypeMask = RENDERTYPE_OPAQUE, uint32_t layerMask = ~0);
 
 
 	// Add box to render in next frame. It will be rendered in DrawDebugWorld()
@@ -315,14 +320,67 @@ namespace wiRenderer
 	void AddRenderablePoint(const RenderablePoint& point);
 
 	// Add a texture that should be mipmapped whenever it is feasible to do so
-	void AddDeferredMIPGen(wiGraphicsTypes::Texture2D* tex);
+	void AddDeferredMIPGen(const wiGraphics::Texture2D* tex);
 
-	// Helper function to open a wiscene file and add the contents to the current scene
-	//	transformMatrix	:	everything will be transformed by this matrix (optional)
-	//	attached		:	everything will be attached to a base entity
-	//
-	//	returns INVALID_ENTITY if attached argument was false, else it returns the base entity handle
-	wiECS::Entity LoadModel(const std::string& fileName, const XMMATRIX& transformMatrix = XMMatrixIdentity(), bool attached = false);
+	struct CustomShader
+	{
+		std::string name;
+
+		struct Pass
+		{
+			uint32_t renderTypeFlags = RENDERTYPE_TRANSPARENT;
+			wiGraphics::GraphicsPSO* pso = nullptr;
+		};
+		Pass passes[RENDERPASS_COUNT] = {};
+	};
+	// Registers a custom shader that can be set to materials. 
+	//	Returns the ID of the custom shader that can be used with MaterialComponent::SetCustomShaderID()
+	int RegisterCustomShader(const CustomShader& customShader);
+	const std::vector<CustomShader>& GetCustomShaders();
+
+	// Helper utility to manage async GPU query readback from the CPU
+	//	GPUQueryRing<latency> here latency specifies the ring size of queries and 
+	//	directly correlates with the frame latency between Issue (GPU) <-> Read back (CPU)
+	template<int latency>
+	struct GPUQueryRing
+	{
+		wiGraphics::GPUQuery queries[latency];
+		int id = 0;
+		bool active[latency] = {};
+
+		// Creates a number of queries in the async ring
+		void Create(wiGraphics::GraphicsDevice* device, const wiGraphics::GPUQueryDesc* desc)
+		{
+			for (int i = 0; i < latency; ++i)
+			{
+				device->CreateQuery(desc, &queries[i]);
+				active[i] = false;
+				id = 0;
+			}
+		}
+
+		// Returns the current query suitable for GPU execution and marks it as active
+		//	Use this with GraphicsDevice::QueryBegin() and GraphicsDevice::QueryEnd()
+		inline wiGraphics::GPUQuery* Get_GPU()
+		{
+			active[id] = true;
+			return &queries[id];
+		}
+
+		// Returns the current query suitable for CPU readback and marks it as inactive
+		//	It will return nullptr if none of the queries are suitable for readback yet
+		//	Use this with GraphicsDevice::QueryRead(). Only call once per frame per QueryRing instance!
+		inline wiGraphics::GPUQuery* Get_CPU()
+		{
+			id = (id + 1) % latency;
+			if (!active[id])
+			{
+				return nullptr;
+			}
+			active[id] = false;
+			return &queries[id];
+		}
+	};
 
 };
 

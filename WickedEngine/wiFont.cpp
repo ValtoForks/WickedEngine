@@ -7,6 +7,7 @@
 #include "wiBackLog.h"
 #include "wiTextureHelper.h"
 #include "wiRectPacker.h"
+#include "wiSpinLock.h"
 
 #include "Utility/stb_truetype.h"
 
@@ -18,7 +19,7 @@
 #include <vector>
 
 using namespace std;
-using namespace wiGraphicsTypes;
+using namespace wiGraphics;
 using namespace wiRectPacker;
 
 #define MAX_TEXT 10000
@@ -29,7 +30,6 @@ using namespace wiRectPacker;
 namespace wiFont_Internal
 {
 	std::string			FONTPATH = "fonts/";
-	GPURingBuffer		vertexBuffers[GRAPHICSTHREAD_COUNT];
 	GPUBuffer			indexBuffer;
 	GPUBuffer			constantBuffer;
 	BlendState			blendState;
@@ -37,14 +37,14 @@ namespace wiFont_Internal
 	DepthStencilState	depthStencilState;
 	Sampler				sampler;
 
-	VertexLayout		*vertexLayout = nullptr;
-	VertexShader		*vertexShader = nullptr;
-	PixelShader			*pixelShader = nullptr;
-	GraphicsPSO			*PSO = nullptr;
+	VertexLayout		vertexLayout;
+	const VertexShader	*vertexShader = nullptr;
+	const PixelShader	*pixelShader = nullptr;
+	GraphicsPSO			PSO;
 
 	atomic_bool initialized = false;
 
-	Texture2D* texture = nullptr;
+	Texture2D texture;
 
 	struct Glyph
 	{
@@ -204,20 +204,6 @@ void wiFont::Initialize()
 	GraphicsDevice* device = wiRenderer::GetDevice();
 
 	{
-		GPUBufferDesc bd;
-		bd.Usage = USAGE_DYNAMIC;
-		bd.ByteWidth = 256 * 1024; // just allocate 256KB to font renderer ring buffer..
-		bd.BindFlags = BIND_VERTEX_BUFFER;
-		bd.CPUAccessFlags = CPU_ACCESS_WRITE;
-
-		for (int i = 0; i < GRAPHICSTHREAD_COUNT; ++i)
-		{
-			HRESULT hr = device->CreateBuffer(&bd, nullptr, &vertexBuffers[i]);
-			assert(SUCCEEDED(hr));
-		}
-	}
-
-	{
 		uint16_t indices[MAX_TEXT * 6];
 		for (uint16_t i = 0; i < MAX_TEXT * 4; i += 4) 
 		{
@@ -296,7 +282,7 @@ void wiFont::Initialize()
 	samplerDesc.BorderColor[2] = 0;
 	samplerDesc.BorderColor[3] = 0;
 	samplerDesc.MinLOD = 0;
-	samplerDesc.MaxLOD = FLOAT32_MAX;
+	samplerDesc.MaxLOD = FLT_MAX;
 	device->CreateSamplerState(&samplerDesc, &sampler);
 
 	LoadShaders();
@@ -307,9 +293,6 @@ void wiFont::Initialize()
 void wiFont::CleanUp()
 {
 	fontStyles.clear();
-	SAFE_DELETE(texture);
-	SAFE_DELETE(vertexShader);
-	SAFE_DELETE(pixelShader);
 }
 
 void wiFont::LoadShaders()
@@ -318,44 +301,31 @@ void wiFont::LoadShaders()
 
 	VertexLayoutDesc layout[] =
 	{
-		{ "POSITION", 0, FORMAT_R16G16_SINT, 0, APPEND_ALIGNED_ELEMENT, INPUT_PER_VERTEX_DATA, 0 },
-		{ "TEXCOORD", 0, FORMAT_R16G16_FLOAT, 0, APPEND_ALIGNED_ELEMENT, INPUT_PER_VERTEX_DATA, 0 },
+		{ "POSITION", 0, FORMAT_R16G16_SINT, 0, VertexLayoutDesc::APPEND_ALIGNED_ELEMENT, INPUT_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, FORMAT_R16G16_FLOAT, 0, VertexLayoutDesc::APPEND_ALIGNED_ELEMENT, INPUT_PER_VERTEX_DATA, 0 },
 	};
-	vertexShader = static_cast<VertexShader*>(wiResourceManager::GetShaderManager().add(path + "fontVS.cso", wiResourceManager::VERTEXSHADER));
+	vertexShader = static_cast<const VertexShader*>(wiResourceManager::GetShaderManager().add(path + "fontVS.cso", wiResourceManager::VERTEXSHADER));
 	
-	vertexLayout = new VertexLayout;
-	wiRenderer::GetDevice()->CreateInputLayout(layout, ARRAYSIZE(layout), &vertexShader->code, vertexLayout);
+	wiRenderer::GetDevice()->CreateInputLayout(layout, ARRAYSIZE(layout), &vertexShader->code, &vertexLayout);
 
 
-	pixelShader = static_cast<PixelShader*>(wiResourceManager::GetShaderManager().add(path + "fontPS.cso", wiResourceManager::PIXELSHADER));
+	pixelShader = static_cast<const PixelShader*>(wiResourceManager::GetShaderManager().add(path + "fontPS.cso", wiResourceManager::PIXELSHADER));
 
 
 	GraphicsPSODesc desc;
 	desc.vs = vertexShader;
 	desc.ps = pixelShader;
-	desc.il = vertexLayout;
+	desc.il = &vertexLayout;
 	desc.bs = &blendState;
 	desc.rs = &rasterizerState;
 	desc.dss = &depthStencilState;
 	desc.numRTs = 1;
 	desc.RTFormats[0] = wiRenderer::GetDevice()->GetBackBufferFormat();
-	RECREATE(PSO);
-	wiRenderer::GetDevice()->CreateGraphicsPSO(&desc, PSO);
+	wiRenderer::GetDevice()->CreateGraphicsPSO(&desc, &PSO);
 }
 
-void wiFont::BindPersistentState(GRAPHICSTHREAD threadID)
+void UpdatePendingGlyphs()
 {
-	if (!initialized)
-	{
-		return;
-	}
-
-	GraphicsDevice* device = wiRenderer::GetDevice();
-
-	device->BindConstantBuffer(VS, &constantBuffer, CB_GETBINDSLOT(FontCB), threadID);
-	device->BindConstantBuffer(PS, &constantBuffer, CB_GETBINDSLOT(FontCB), threadID);
-
-
 	// If there are pending glyphs, render them and repack the atlas:
 	if (!pendingGlyphs.empty())
 	{
@@ -459,13 +429,10 @@ void wiFont::BindPersistentState(GRAPHICSTHREAD threadID)
 			assert(SUCCEEDED(hr));
 		}
 	}
-
-	// Bind the whole font atlas once for the whole frame:
-	device->BindResource(PS, texture, TEXSLOT_FONTATLAS, threadID);
 }
-Texture2D* wiFont::GetAtlas()
+const Texture2D* wiFont::GetAtlas()
 {
-	return texture;
+	return &texture;
 }
 std::string& wiFont::GetFontPath()
 {
@@ -486,7 +453,7 @@ int wiFont::AddFontStyle(const string& fontName)
 }
 
 
-void wiFont::Draw(GRAPHICSTHREAD threadID)
+void wiFont::Draw(GRAPHICSTHREAD threadID) const
 {
 	if (!initialized.load() || text.length() <= 0)
 	{
@@ -508,28 +475,31 @@ void wiFont::Draw(GRAPHICSTHREAD threadID)
 
 	GraphicsDevice* device = wiRenderer::GetDevice();
 
-	UINT vboffset;
-	volatile FontVertex* textBuffer = (volatile FontVertex*)device->AllocateFromRingBuffer(&vertexBuffers[threadID], sizeof(FontVertex) * text.length() * 4, vboffset, threadID);
-	if (textBuffer == nullptr)
+	GraphicsDevice::GPUAllocation mem = device->AllocateGPU(sizeof(FontVertex) * text.length() * 4, threadID);
+	if (!mem.IsValid())
 	{
 		return;
 	}
+	volatile FontVertex* textBuffer = (volatile FontVertex*)mem.data;
 	const int quadCount = WriteVertices(textBuffer, text, newProps, style);
-	device->InvalidateBufferAccess(&vertexBuffers[threadID], threadID);
 
 	device->EventBegin("Font", threadID);
 
-	device->BindGraphicsPSO(PSO, threadID);
+	device->BindGraphicsPSO(&PSO, threadID);
+
+	device->BindConstantBuffer(VS, &constantBuffer, CB_GETBINDSLOT(FontCB), threadID);
+	device->BindConstantBuffer(PS, &constantBuffer, CB_GETBINDSLOT(FontCB), threadID);
+	device->BindResource(PS, &texture, TEXSLOT_FONTATLAS, threadID);
 	device->BindSampler(PS, &sampler, SSLOT_ONDEMAND1, threadID);
 
-	GPUBuffer* vbs[] = {
-		&vertexBuffers[threadID],
+	const GPUBuffer* vbs[] = {
+		mem.buffer,
 	};
 	const UINT strides[] = {
 		sizeof(FontVertex),
 	};
 	const UINT offsets[] = {
-		vboffset,
+		mem.offset,
 	};
 	device->BindVertexBuffers(vbs, 0, ARRAYSIZE(vbs), strides, offsets, threadID);
 
@@ -562,12 +532,14 @@ void wiFont::Draw(GRAPHICSTHREAD threadID)
 	device->DrawIndexed(quadCount * 6, 0, 0, threadID);
 
 	device->EventEnd(threadID);
+
+	UpdatePendingGlyphs();
 }
 
 
-int wiFont::textWidth()
+int wiFont::textWidth() const
 {
-	if (style >= fontStyles.size())
+	if (style >= (int)fontStyles.size())
 	{
 		return 0;
 	}
@@ -601,14 +573,14 @@ int wiFont::textWidth()
 			const Glyph& glyph = glyph_lookup.at(hash);
 			currentLineWidth += int((glyph.width + params.spacingX) * params.scaling);
 		}
-		maxWidth = max(maxWidth, currentLineWidth);
+		maxWidth = std::max(maxWidth, currentLineWidth);
 	}
 
 	return maxWidth;
 }
-int wiFont::textHeight()
+int wiFont::textHeight() const
 {
-	if (style >= fontStyles.size())
+	if (style >= (int)fontStyles.size())
 	{
 		return 0;
 	}
@@ -642,11 +614,11 @@ void wiFont::SetText(const wstring& text)
 {
 	this->text = text;
 }
-wstring wiFont::GetText()
+wstring wiFont::GetText() const
 {
 	return text;
 }
-string wiFont::GetTextA()
+string wiFont::GetTextA() const
 {
 	return string(text.begin(),text.end());
 }

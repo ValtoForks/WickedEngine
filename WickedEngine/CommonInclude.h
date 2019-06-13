@@ -6,6 +6,9 @@
 
 
 // Platform specific:
+#define NOMINMAX
+#undef min
+#undef max
 #include <SDKDDKVer.h>
 #include <windows.h>
 
@@ -39,13 +42,6 @@ inline void SwapPtr(T*& a, T*& b)
 	T* swap = a;
 	a = b;
 	b = swap;
-}
-
-template<typename T>
-inline void RECREATE(T*& myObject)
-{
-	SAFE_DELETE(myObject);
-	myObject = new T;
 }
 
 static const XMFLOAT4X4 IDENTITYMATRIX = XMFLOAT4X4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);

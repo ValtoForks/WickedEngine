@@ -83,8 +83,8 @@ static Atlas_Dim GenerateMeshAtlas(MeshComponent& meshcomponent, uint32_t resolu
 			mesh.vertexNormalData = meshcomponent.vertex_normals.data();
 			mesh.vertexNormalStride = sizeof(float) * 3;
 		}
-		if (!meshcomponent.vertex_texcoords.empty()) {
-			mesh.vertexUvData = meshcomponent.vertex_texcoords.data();
+		if (!meshcomponent.vertex_uvset_0.empty()) {
+			mesh.vertexUvData = meshcomponent.vertex_uvset_0.data();
 			mesh.vertexUvStride = sizeof(float) * 2;
 		}
 		mesh.indexCount = (int)meshcomponent.indices.size();
@@ -116,7 +116,8 @@ static Atlas_Dim GenerateMeshAtlas(MeshComponent& meshcomponent, uint32_t resolu
 		std::vector<XMFLOAT3> positions(mesh->vertexCount);
 		std::vector<XMFLOAT2> atlas(mesh->vertexCount);
 		std::vector<XMFLOAT3> normals;
-		std::vector<XMFLOAT2> texcoords;
+		std::vector<XMFLOAT2> uvset_0;
+		std::vector<XMFLOAT2> uvset_1;
 		std::vector<uint32_t> colors;
 		std::vector<XMUINT4> boneindices;
 		std::vector<XMFLOAT4> boneweights;
@@ -124,9 +125,13 @@ static Atlas_Dim GenerateMeshAtlas(MeshComponent& meshcomponent, uint32_t resolu
 		{
 			normals.resize(mesh->vertexCount);
 		}
-		if (!meshcomponent.vertex_texcoords.empty())
+		if (!meshcomponent.vertex_uvset_0.empty())
 		{
-			texcoords.resize(mesh->vertexCount);
+			uvset_0.resize(mesh->vertexCount);
+		}
+		if (!meshcomponent.vertex_uvset_1.empty())
+		{
+			uvset_1.resize(mesh->vertexCount);
 		}
 		if (!meshcomponent.vertex_colors.empty())
 		{
@@ -153,9 +158,13 @@ static Atlas_Dim GenerateMeshAtlas(MeshComponent& meshcomponent, uint32_t resolu
 			{
 				normals[ind] = meshcomponent.vertex_normals[v.xref];
 			}
-			if (!texcoords.empty())
+			if (!uvset_0.empty())
 			{
-				texcoords[ind] = meshcomponent.vertex_texcoords[v.xref];
+				uvset_0[ind] = meshcomponent.vertex_uvset_0[v.xref];
+			}
+			if (!uvset_1.empty())
+			{
+				uvset_1[ind] = meshcomponent.vertex_uvset_1[v.xref];
 			}
 			if (!colors.empty())
 			{
@@ -177,9 +186,13 @@ static Atlas_Dim GenerateMeshAtlas(MeshComponent& meshcomponent, uint32_t resolu
 		{
 			meshcomponent.vertex_normals = normals;
 		}
-		if (!texcoords.empty())
+		if (!uvset_0.empty())
 		{
-			meshcomponent.vertex_texcoords = texcoords;
+			meshcomponent.vertex_uvset_0 = uvset_0;
+		}
+		if (!uvset_1.empty())
+		{
+			meshcomponent.vertex_uvset_1 = uvset_1;
 		}
 		if (!colors.empty())
 		{
@@ -258,7 +271,7 @@ ObjectWindow::ObjectWindow(EditorComponent* editor) : editor(editor)
 	renderableCheckBox->SetPos(XMFLOAT2(x, y += 30));
 	renderableCheckBox->SetCheck(true);
 	renderableCheckBox->OnClick([&](wiEventArgs args) {
-		ObjectComponent* object = wiRenderer::GetScene().objects.GetComponent(entity);
+		ObjectComponent* object = wiSceneSystem::GetScene().objects.GetComponent(entity);
 		if (object != nullptr)
 		{
 			object->SetRenderable(args.bValue);
@@ -271,7 +284,7 @@ ObjectWindow::ObjectWindow(EditorComponent* editor) : editor(editor)
 	ditherSlider->SetSize(XMFLOAT2(100, 30));
 	ditherSlider->SetPos(XMFLOAT2(x, y += 30));
 	ditherSlider->OnSlide([&](wiEventArgs args) {
-		ObjectComponent* object = wiRenderer::GetScene().objects.GetComponent(entity);
+		ObjectComponent* object = wiSceneSystem::GetScene().objects.GetComponent(entity);
 		if (object != nullptr)
 		{
 			object->color.w = 1 - args.fValue;
@@ -284,7 +297,7 @@ ObjectWindow::ObjectWindow(EditorComponent* editor) : editor(editor)
 	cascadeMaskSlider->SetSize(XMFLOAT2(100, 30));
 	cascadeMaskSlider->SetPos(XMFLOAT2(x, y += 30));
 	cascadeMaskSlider->OnSlide([&](wiEventArgs args) {
-		ObjectComponent* object = wiRenderer::GetScene().objects.GetComponent(entity);
+		ObjectComponent* object = wiSceneSystem::GetScene().objects.GetComponent(entity);
 		if (object != nullptr)
 		{
 			object->cascadeMask = (uint32_t)args.iValue;
@@ -299,11 +312,11 @@ ObjectWindow::ObjectWindow(EditorComponent* editor) : editor(editor)
 	colorPicker->SetVisible(true);
 	colorPicker->SetEnabled(true);
 	colorPicker->OnColorChanged([&](wiEventArgs args) {
-		ObjectComponent* object = wiRenderer::GetScene().objects.GetComponent(entity);
+		ObjectComponent* object = wiSceneSystem::GetScene().objects.GetComponent(entity);
 		if (object != nullptr)
 		{
 			XMFLOAT3 col = args.color.toFloat3();
-			object->color = XMFLOAT4(powf(col.x, 1.f / 2.2f), powf(col.y, 1.f / 2.2f), powf(col.z, 1.f / 2.2f), object->color.w);
+			object->color = XMFLOAT4(col.x, col.y, col.z, object->color.w);
 		}
 	});
 	objectWindow->AddWidget(colorPicker);
@@ -324,7 +337,7 @@ ObjectWindow::ObjectWindow(EditorComponent* editor) : editor(editor)
 	rigidBodyCheckBox->SetCheck(false);
 	rigidBodyCheckBox->OnClick([&](wiEventArgs args) 
 	{
-		Scene& scene = wiRenderer::GetScene();
+		Scene& scene = wiSceneSystem::GetScene();
 		RigidBodyPhysicsComponent* physicscomponent = scene.rigidbodies.GetComponent(entity);
 
 		if (args.bValue)
@@ -353,7 +366,7 @@ ObjectWindow::ObjectWindow(EditorComponent* editor) : editor(editor)
 	kinematicCheckBox->SetPos(XMFLOAT2(x, y += 30));
 	kinematicCheckBox->SetCheck(false);
 	kinematicCheckBox->OnClick([&](wiEventArgs args) {
-		RigidBodyPhysicsComponent* physicscomponent = wiRenderer::GetScene().rigidbodies.GetComponent(entity);
+		RigidBodyPhysicsComponent* physicscomponent = wiSceneSystem::GetScene().rigidbodies.GetComponent(entity);
 		if (physicscomponent != nullptr)
 		{
 			physicscomponent->SetKinematic(args.bValue);
@@ -366,7 +379,7 @@ ObjectWindow::ObjectWindow(EditorComponent* editor) : editor(editor)
 	disabledeactivationCheckBox->SetPos(XMFLOAT2(x, y += 30));
 	disabledeactivationCheckBox->SetCheck(false);
 	disabledeactivationCheckBox->OnClick([&](wiEventArgs args) {
-		RigidBodyPhysicsComponent* physicscomponent = wiRenderer::GetScene().rigidbodies.GetComponent(entity);
+		RigidBodyPhysicsComponent* physicscomponent = wiSceneSystem::GetScene().rigidbodies.GetComponent(entity);
 		if (physicscomponent != nullptr)
 		{
 			physicscomponent->SetDisableDeactivation(args.bValue);
@@ -384,7 +397,7 @@ ObjectWindow::ObjectWindow(EditorComponent* editor) : editor(editor)
 	collisionShapeComboBox->AddItem("Triangle Mesh");
 	collisionShapeComboBox->OnSelect([&](wiEventArgs args) 
 	{
-		RigidBodyPhysicsComponent* physicscomponent = wiRenderer::GetScene().rigidbodies.GetComponent(entity);
+		RigidBodyPhysicsComponent* physicscomponent = wiSceneSystem::GetScene().rigidbodies.GetComponent(entity);
 		if (physicscomponent != nullptr)
 		{
 			switch (args.iValue)
@@ -429,13 +442,32 @@ ObjectWindow::ObjectWindow(EditorComponent* editor) : editor(editor)
 	});
 	objectWindow->AddWidget(lightmapResolutionSlider);
 
+	lightmapSourceUVSetComboBox = new wiComboBox("Source UV: ");
+	lightmapSourceUVSetComboBox->SetPos(XMFLOAT2(x - 130, y += 30));
+	lightmapSourceUVSetComboBox->AddItem("Copy UV 0");
+	lightmapSourceUVSetComboBox->AddItem("Copy UV 1");
+	lightmapSourceUVSetComboBox->AddItem("Keep Atlas");
+	lightmapSourceUVSetComboBox->AddItem("Generate Atlas");
+	lightmapSourceUVSetComboBox->SetSelected(3);
+	lightmapSourceUVSetComboBox->SetTooltip("Set which UV set to use when generating the lightmap Atlas");
+	objectWindow->AddWidget(lightmapSourceUVSetComboBox);
+
 	generateLightmapButton = new wiButton("Generate Lightmap");
 	generateLightmapButton->SetTooltip("Render the lightmap for only this object. It will automatically combined with the global lightmap.");
-	generateLightmapButton->SetPos(XMFLOAT2(x, y += 30));
+	generateLightmapButton->SetPos(XMFLOAT2(x, y));
 	generateLightmapButton->SetSize(XMFLOAT2(140,30));
 	generateLightmapButton->OnClick([&](wiEventArgs args) {
 
-		Scene& scene = wiRenderer::GetScene();
+		Scene& scene = wiSceneSystem::GetScene();
+
+		enum UV_GEN_TYPE
+		{
+			UV_GEN_COPY_UVSET_0,
+			UV_GEN_COPY_UVSET_1,
+			UV_GEN_KEEP_ATLAS,
+			UV_GEN_GENERATE_ATLAS,
+		};
+		UV_GEN_TYPE gen_type = (UV_GEN_TYPE)lightmapSourceUVSetComboBox->GetSelected();
 
 		std::unordered_set<ObjectComponent*> gen_objects;
 		std::unordered_map<MeshComponent*, Atlas_Dim> gen_meshes;
@@ -458,9 +490,23 @@ ObjectWindow::ObjectWindow(EditorComponent* editor) : editor(editor)
 
 		for (auto& it : gen_meshes)
 		{
-			wiJobSystem::Execute([&] {
-				it.second = GenerateMeshAtlas(*it.first, (uint32_t)lightmapResolutionSlider->GetValue());
-			});
+			MeshComponent& mesh = *it.first;
+			if (gen_type == UV_GEN_COPY_UVSET_0)
+			{
+				mesh.vertex_atlas = mesh.vertex_uvset_0;
+				mesh.CreateRenderData();
+			}
+			else if (gen_type == UV_GEN_COPY_UVSET_1)
+			{
+				mesh.vertex_atlas = mesh.vertex_uvset_1;
+				mesh.CreateRenderData();
+			}
+			else if (gen_type == UV_GEN_GENERATE_ATLAS)
+			{
+				wiJobSystem::Execute([&] {
+					it.second = GenerateMeshAtlas(mesh, (uint32_t)lightmapResolutionSlider->GetValue());
+				});
+			}
 		}
 		wiJobSystem::Wait();
 
@@ -468,8 +514,15 @@ ObjectWindow::ObjectWindow(EditorComponent* editor) : editor(editor)
 		{
 			x->ClearLightmap();
 			MeshComponent* meshcomponent = scene.meshes.GetComponent(x->meshID);
-			x->lightmapWidth = gen_meshes.at(meshcomponent).width;
-			x->lightmapHeight = gen_meshes.at(meshcomponent).height;
+			if (gen_type == UV_GEN_GENERATE_ATLAS)
+			{
+				x->lightmapWidth = gen_meshes.at(meshcomponent).width;
+				x->lightmapHeight = gen_meshes.at(meshcomponent).height;
+			}
+			else
+			{
+				x->lightmapWidth = x->lightmapHeight = (uint32_t)lightmapResolutionSlider->GetValue();
+			}
 			x->SetLightmapRenderRequest(true);
 		}
 
@@ -484,7 +537,7 @@ ObjectWindow::ObjectWindow(EditorComponent* editor) : editor(editor)
 	stopLightmapGenButton->SetSize(XMFLOAT2(140, 30));
 	stopLightmapGenButton->OnClick([&](wiEventArgs args) {
 
-		Scene& scene = wiRenderer::GetScene();
+		Scene& scene = wiSceneSystem::GetScene();
 
 		for (auto& x : this->editor->selected)
 		{
@@ -505,7 +558,7 @@ ObjectWindow::ObjectWindow(EditorComponent* editor) : editor(editor)
 	clearLightmapButton->SetSize(XMFLOAT2(140, 30));
 	clearLightmapButton->OnClick([&](wiEventArgs args) {
 
-		Scene& scene = wiRenderer::GetScene();
+		Scene& scene = wiSceneSystem::GetScene();
 
 		for (auto& x : this->editor->selected)
 		{
@@ -521,7 +574,7 @@ ObjectWindow::ObjectWindow(EditorComponent* editor) : editor(editor)
 
 
 
-	objectWindow->Translate(XMFLOAT3(1300, 120, 0));
+	objectWindow->Translate(XMFLOAT3(screenW - 720, 120, 0));
 	objectWindow->SetVisible(false);
 
 	SetEntity(INVALID_ENTITY);
@@ -543,7 +596,7 @@ void ObjectWindow::SetEntity(Entity entity)
 
 	this->entity = entity;
 
-	Scene& scene = wiRenderer::GetScene();
+	Scene& scene = wiSceneSystem::GetScene();
 
 	const ObjectComponent* object = scene.objects.GetComponent(entity);
 

@@ -13,6 +13,7 @@ protected:
 	RenderPath* activePath = nullptr;
 	float targetFrameRate = 60;
 	bool frameskip = true;
+	bool framerate_lock = false;
 	bool initialized = false;
 
 	wiFadeManager fadeManager;
@@ -44,6 +45,7 @@ public:
 	//	enabled		: the FixedUpdate() loop will run at targetFrameRate frequency
 	//	disabled	: the FixedUpdate() loop will run every frame only once.
 	void	setFrameSkip(bool enabled) { frameskip = enabled; }
+	void	setFrameRateLock(bool enabled) { framerate_lock = enabled; }
 
 	// This is where the critical initializations happen (before any rendering or anything else)
 	virtual void Initialize();
@@ -60,12 +62,11 @@ public:
 	virtual void Compose();
 
 #ifndef WINSTORE_SUPPORT
-	HINSTANCE hInst = NULL;
 	// You need to call this before calling Run() or Initialize() if you want to render to a Win32 window handle
-	bool SetWindow(wiWindowRegistration::window_type window, HINSTANCE hInst = NULL);
+	void SetWindow(wiWindowRegistration::window_type window, HINSTANCE hInst = NULL);
 #else
 	// You need to call this before calling Run() or Initialize() if you want to render to a UWP window
-	bool SetWindow(wiWindowRegistration::window_type window);
+	void SetWindow(wiWindowRegistration::window_type window);
 #endif
 
 

@@ -6,7 +6,7 @@
 
 #include <vector>
 
-namespace wiGraphicsTypes
+namespace wiGraphics
 {
 	typedef uint64_t wiCPUHandle;
 	static const wiCPUHandle WI_NULL_HANDLE = 0;
@@ -16,20 +16,19 @@ namespace wiGraphicsTypes
 	struct GraphicsDeviceChild
 	{
 		GraphicsDevice* device = nullptr;
-		void Register(GraphicsDevice* dev) { device = dev; }
+		inline void Register(GraphicsDevice* dev) { device = dev; }
+		inline bool IsValid() const { return device != nullptr; }
 	};
 
 	struct ShaderByteCode
 	{
-		BYTE* data;
-		size_t size;
-		ShaderByteCode() :data(nullptr), size(0) {}
+		BYTE* data = nullptr;
+		size_t size = 0;
 		~ShaderByteCode() { SAFE_DELETE_ARRAY(data); }
 	};
 
 	struct VertexShader : public GraphicsDeviceChild
 	{
-		VertexShader();
 		~VertexShader();
 
 		ShaderByteCode code;
@@ -38,7 +37,6 @@ namespace wiGraphicsTypes
 
 	struct PixelShader : public GraphicsDeviceChild
 	{
-		PixelShader();
 		~PixelShader();
 
 		ShaderByteCode code;
@@ -47,7 +45,6 @@ namespace wiGraphicsTypes
 
 	struct GeometryShader : public GraphicsDeviceChild
 	{
-		GeometryShader();
 		~GeometryShader();
 
 		ShaderByteCode code;
@@ -56,7 +53,6 @@ namespace wiGraphicsTypes
 
 	struct HullShader : public GraphicsDeviceChild
 	{
-		HullShader();
 		~HullShader();
 
 		ShaderByteCode code;
@@ -65,7 +61,6 @@ namespace wiGraphicsTypes
 
 	struct DomainShader : public GraphicsDeviceChild
 	{
-		DomainShader();
 		~DomainShader();
 
 		ShaderByteCode code;
@@ -74,7 +69,6 @@ namespace wiGraphicsTypes
 
 	struct ComputeShader : public GraphicsDeviceChild
 	{
-		ComputeShader();
 		~ComputeShader();
 
 		ShaderByteCode code;
@@ -86,25 +80,33 @@ namespace wiGraphicsTypes
 		wiCPUHandle resource = WI_NULL_HANDLE;
 		SamplerDesc desc;
 
-		Sampler();
 		~Sampler();
 
-		bool IsValid() { return resource != WI_NULL_HANDLE; }
-		SamplerDesc GetDesc() { return desc; }
+		const SamplerDesc& GetDesc() const { return desc; }
 	};
 
 	struct GPUResource : public GraphicsDeviceChild
 	{
+		enum GPU_RESOURCE_TYPE
+		{
+			BUFFER,
+			TEXTURE_1D,
+			TEXTURE_2D,
+			TEXTURE_3D,
+			UNKNOWN_TYPE,
+		} type = UNKNOWN_TYPE;
+		inline bool IsTexture() const { return type == TEXTURE_1D || type == TEXTURE_2D || type == TEXTURE_3D; }
+		inline bool IsBuffer() const { return type == BUFFER; }
+
 		wiCPUHandle SRV = WI_NULL_HANDLE;			// main resource SRV
 		std::vector<wiCPUHandle> additionalSRVs;	// can be used for sub-resources if requested
 
 		wiCPUHandle UAV = WI_NULL_HANDLE;			// main resource UAV
 		std::vector<wiCPUHandle> additionalUAVs;	// can be used for sub-resources if requested
 
-		wiCPUHandle resource;
-		wiCPUHandle resourceMemory;
+		wiCPUHandle resource = WI_NULL_HANDLE;
+		wiCPUHandle resourceMemory = WI_NULL_HANDLE;
 
-		GPUResource();
 		virtual ~GPUResource();
 	};
 
@@ -113,20 +115,9 @@ namespace wiGraphicsTypes
 		wiCPUHandle CBV = WI_NULL_HANDLE;
 		GPUBufferDesc desc;
 
-		GPUBuffer();
 		virtual ~GPUBuffer();
 
-		bool IsValid() { return resource != WI_NULL_HANDLE; }
-		GPUBufferDesc GetDesc() { return desc; }
-	};
-
-	struct GPURingBuffer : public GPUBuffer
-	{
-		size_t byteOffset = 0;
-		uint64_t residentFrame = 0;
-
-		// The next appending to buffer will start at this offset
-		size_t GetByteOffset() { return byteOffset; }
+		const GPUBufferDesc& GetDesc() const { return desc; }
 	};
 
 	struct VertexLayout : public GraphicsDeviceChild
@@ -135,7 +126,6 @@ namespace wiGraphicsTypes
 
 		std::vector<VertexLayoutDesc> desc;
 
-		VertexLayout();
 		~VertexLayout();
 	};
 
@@ -144,10 +134,9 @@ namespace wiGraphicsTypes
 		wiCPUHandle resource = WI_NULL_HANDLE;
 		BlendStateDesc desc;
 
-		BlendState();
 		~BlendState();
 
-		BlendStateDesc GetDesc() { return desc; }
+		const BlendStateDesc& GetDesc() const { return desc; }
 	};
 
 	struct DepthStencilState : public GraphicsDeviceChild
@@ -155,10 +144,9 @@ namespace wiGraphicsTypes
 		wiCPUHandle resource = WI_NULL_HANDLE;
 		DepthStencilStateDesc desc;
 
-		DepthStencilState();
 		~DepthStencilState();
 
-		DepthStencilStateDesc GetDesc() { return desc; }
+		const DepthStencilStateDesc& GetDesc() const { return desc; }
 	};
 
 	struct RasterizerState : public GraphicsDeviceChild
@@ -166,10 +154,9 @@ namespace wiGraphicsTypes
 		wiCPUHandle resource = WI_NULL_HANDLE;
 		RasterizerStateDesc desc;
 
-		RasterizerState();
 		~RasterizerState();
 
-		RasterizerStateDesc GetDesc() { return desc; }
+		const RasterizerStateDesc& GetDesc() const { return desc; }
 	};
 
 	struct Texture : public GPUResource
@@ -185,9 +172,6 @@ namespace wiGraphicsTypes
 
 		const TextureDesc& GetDesc() const { return desc; }
 
-		Texture();
-		virtual ~Texture();
-
 		// if true, then each array slice will get a unique rendertarget
 		void RequestIndependentRenderTargetArraySlices(bool value);
 		// if true, then each face of the cubemap will get a unique rendertarget
@@ -202,7 +186,6 @@ namespace wiGraphicsTypes
 
 	struct Texture1D : public Texture
 	{
-		Texture1D();
 		virtual ~Texture1D();
 	};
 
@@ -211,13 +194,11 @@ namespace wiGraphicsTypes
 		wiCPUHandle	DSV = WI_NULL_HANDLE;
 		std::vector<wiCPUHandle> additionalDSVs;
 
-		Texture2D();
 		virtual ~Texture2D();
 	};
 
 	struct Texture3D : public Texture
 	{
-		Texture3D();
 		virtual ~Texture3D();
 	};
 
@@ -226,43 +207,31 @@ namespace wiGraphicsTypes
 
 	struct GPUQuery : public GraphicsDeviceChild
 	{
-		std::vector<wiCPUHandle>	resource;
-		std::vector<int>			active;
-		GPUQueryDesc				desc;
-		int							async_frameshift;
+		wiCPUHandle	resource = WI_NULL_HANDLE;
+		GPUQueryDesc desc;
 
-		GPUQuery();
-		virtual ~GPUQuery();
+		~GPUQuery();
 
-		bool IsValid() { return !resource.empty() && resource[0] != WI_NULL_HANDLE; }
-		GPUQueryDesc GetDesc() const { return desc; }
-
-		BOOL	result_passed;
-		UINT64	result_passed_sample_count;
-		UINT64	result_timestamp;
-		UINT64	result_timestamp_frequency;
-		BOOL	result_disjoint;
+		const GPUQueryDesc& GetDesc() const { return desc; }
 	};
 
 
 	struct GraphicsPSO : public GraphicsDeviceChild
 	{
-		wiCPUHandle	pipeline;
+		wiCPUHandle	pipeline = WI_NULL_HANDLE;
 		GraphicsPSODesc desc;
 
 		const GraphicsPSODesc& GetDesc() const { return desc; }
 
-		GraphicsPSO();
 		~GraphicsPSO();
 	};
 	struct ComputePSO : public GraphicsDeviceChild
 	{
-		wiCPUHandle	pipeline;
+		wiCPUHandle	pipeline = WI_NULL_HANDLE;
 		ComputePSODesc desc;
 
 		const ComputePSODesc& GetDesc() const { return desc; }
 
-		ComputePSO();
 		~ComputePSO();
 	};
 

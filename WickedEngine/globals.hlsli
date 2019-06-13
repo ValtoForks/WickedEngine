@@ -8,6 +8,7 @@ TEXTURE2D(texture_lineardepth, float, TEXSLOT_LINEARDEPTH)
 TEXTURE2D(texture_gbuffer0, float4, TEXSLOT_GBUFFER0)
 TEXTURE2D(texture_gbuffer1, float4, TEXSLOT_GBUFFER1)
 TEXTURE2D(texture_gbuffer2, float4, TEXSLOT_GBUFFER2)
+TEXTURECUBE(texture_globalenvmap, float4, TEXSLOT_GLOBALENVMAP)
 TEXTURE2D(texture_globallightmap, float4, TEXSLOT_GLOBALLIGHTMAP)
 TEXTURECUBEARRAY(texture_envmaparray, float4, TEXSLOT_ENVMAPARRAY)
 TEXTURE2D(texture_decalatlas, float4, TEXSLOT_DECALATLAS)
@@ -16,7 +17,7 @@ TEXTURECUBEARRAY(texture_shadowarray_cube, float, TEXSLOT_SHADOWARRAY_CUBE)
 TEXTURE2DARRAY(texture_shadowarray_transparent, float4, TEXSLOT_SHADOWARRAY_TRANSPARENT)
 TEXTURE3D(texture_voxelradiance, float4, TEXSLOT_VOXELRADIANCE)
 
-STRUCTUREDBUFFER(EntityIndexList, uint, SBSLOT_ENTITYINDEXLIST);
+STRUCTUREDBUFFER(EntityTiles, uint, SBSLOT_ENTITYTILES);
 STRUCTUREDBUFFER(EntityArray, ShaderEntityType, SBSLOT_ENTITYARRAY);
 STRUCTUREDBUFFER(MatrixArray, float4x4, SBSLOT_MATRIXARRAY);
 
@@ -70,12 +71,18 @@ static const int gaussianOffsets[9] = {
 
 #define sqr(a)		((a)*(a))
 
+inline bool is_saturated(float a) { return a == saturate(a); }
+inline bool is_saturated(float2 a) { return is_saturated(a.x) && is_saturated(a.y); }
+inline bool is_saturated(float3 a) { return is_saturated(a.x) && is_saturated(a.y) && is_saturated(a.z); }
+inline bool is_saturated(float4 a) { return is_saturated(a.x) && is_saturated(a.y) && is_saturated(a.z) && is_saturated(a.w); }
+
 #ifdef DISABLE_ALPHATEST
 #define ALPHATEST(x)
 #else
 #define ALPHATEST(x)	clip((x) - (1.0f - g_xAlphaRef));
 #endif
 
+#define DEGAMMA_SKY(x)	pow(abs(x),g_xFrame_StaticSkyGamma)
 #define DEGAMMA(x)		pow(abs(x),g_xFrame_Gamma)
 #define GAMMA(x)		pow(abs(x),1.0/g_xFrame_Gamma)
 
@@ -91,6 +98,14 @@ inline float GetScreenHeight() { return g_xFrame_ScreenWidthHeight.y; }
 inline float2 GetInternalResolution() { return g_xFrame_InternalResolution; }
 inline float GetTime() { return g_xFrame_Time; }
 inline uint2 GetTemporalAASampleRotation() { return float2((g_xFrame_TemporalAASampleRotation >> 0) & 0x000000FF, (g_xFrame_TemporalAASampleRotation >> 8) & 0x000000FF); }
+inline bool IsStaticSky() { return g_xFrame_StaticSkyGamma > 0.0f; }
+inline void ConvertToSpecularGlossiness(inout float4 surface_occlusion_roughness_metallic_reflectance)
+{
+	surface_occlusion_roughness_metallic_reflectance.r = 1;
+	surface_occlusion_roughness_metallic_reflectance.g = 1 - surface_occlusion_roughness_metallic_reflectance.a;
+	surface_occlusion_roughness_metallic_reflectance.b = max(surface_occlusion_roughness_metallic_reflectance.r, max(surface_occlusion_roughness_metallic_reflectance.g, surface_occlusion_roughness_metallic_reflectance.b));
+	surface_occlusion_roughness_metallic_reflectance.a = 0.02f;
+}
 
 struct ComputeShaderInput
 {
@@ -235,6 +250,85 @@ float4 SampleTextureCatmullRom(in Texture2D<float4> tex, in float2 uv, in float 
 	result += tex.SampleLevel(sampler_linear_clamp, float2(texPos3.x, texPos3.y), mipLevel) * w3.x * w3.y;
 
 	return result;
+}
+
+inline uint pack_unitvector(in float3 value)
+{
+	uint retVal = 0;
+	retVal |= (uint)((value.x * 0.5f + 0.5f) * 255.0f) << 0;
+	retVal |= (uint)((value.y * 0.5f + 0.5f) * 255.0f) << 8;
+	retVal |= (uint)((value.z * 0.5f + 0.5f) * 255.0f) << 16;
+	return retVal;
+}
+inline float3 unpack_unitvector(in uint value)
+{
+	float3 retVal;
+	retVal.x = (float)((value >> 0) & 0x000000FF) / 255.0f * 2.0f - 1.0f;
+	retVal.y = (float)((value >> 8) & 0x000000FF) / 255.0f * 2.0f - 1.0f;
+	retVal.z = (float)((value >> 16) & 0x000000FF) / 255.0f * 2.0f - 1.0f;
+	return retVal;
+}
+
+inline uint pack_rgba(in float4 value)
+{
+	uint retVal = 0;
+	retVal |= (uint)(value.x * 255.0f) << 0;
+	retVal |= (uint)(value.y * 255.0f) << 8;
+	retVal |= (uint)(value.z * 255.0f) << 16;
+	retVal |= (uint)(value.w * 255.0f) << 24;
+	return retVal;
+}
+inline float4 unpack_rgba(in uint value)
+{
+	float4 retVal;
+	retVal.x = (float)((value >> 0) & 0x000000FF) / 255.0f;
+	retVal.y = (float)((value >> 8) & 0x000000FF) / 255.0f;
+	retVal.z = (float)((value >> 16) & 0x000000FF) / 255.0f;
+	retVal.w = (float)((value >> 24) & 0x000000FF) / 255.0f;
+	return retVal;
+}
+
+inline uint2 pack_half4(in float4 value)
+{
+	uint2 retVal = 0;
+	retVal.x = f32tof16(value.x) | (f32tof16(value.y) << 16);
+	retVal.y = f32tof16(value.z) | (f32tof16(value.w) << 16);
+	return retVal;
+}
+inline float4 unpack_half4(in uint2 value)
+{
+	float4 retVal;
+	retVal.x = f16tof32(value.x);
+	retVal.y = f16tof32(value.x >> 16);
+	retVal.z = f16tof32(value.y);
+	retVal.w = f16tof32(value.y >> 16);
+	return retVal;
+}
+
+
+
+// Expands a 10-bit integer into 30 bits
+// by inserting 2 zeros after each bit.
+inline uint expandBits(uint v)
+{
+	v = (v * 0x00010001u) & 0xFF0000FFu;
+	v = (v * 0x00000101u) & 0x0F00F00Fu;
+	v = (v * 0x00000011u) & 0xC30C30C3u;
+	v = (v * 0x00000005u) & 0x49249249u;
+	return v;
+}
+
+// Calculates a 30-bit Morton code for the
+// given 3D point located within the unit cube [0,1].
+inline uint morton3D(in float3 pos)
+{
+	pos.x = min(max(pos.x * 1024.0f, 0.0f), 1023.0f);
+	pos.y = min(max(pos.y * 1024.0f, 0.0f), 1023.0f);
+	pos.z = min(max(pos.z * 1024.0f, 0.0f), 1023.0f);
+	uint xx = expandBits((uint)pos.x);
+	uint yy = expandBits((uint)pos.y);
+	uint zz = expandBits((uint)pos.z);
+	return xx * 4 + yy * 2 + zz;
 }
 
 #endif // _SHADER_GLOBALS_

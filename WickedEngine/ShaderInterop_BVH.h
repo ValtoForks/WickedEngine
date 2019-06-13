@@ -2,48 +2,61 @@
 #define _SHADERINTEROP_BVH_H_
 #include "ShaderInterop.h"
 
-#define BVH_CLASSIFICATION_GROUPSIZE 64
-#define BVH_CLUSTERPROCESSOR_GROUPSIZE 64
-#define BVH_HIERARCHY_GROUPSIZE 64
-#define BVH_PROPAGATEAABB_GROUPSIZE 64
-
-static const uint ARGUMENTBUFFER_OFFSET_HIERARCHY = 0;
-static const uint ARGUMENTBUFFER_OFFSET_CLUSTERPROCESSOR = ARGUMENTBUFFER_OFFSET_HIERARCHY + (3 * 4);
+#define BVH_BUILDER_GROUPSIZE 64
 
 CBUFFER(BVHCB, CBSLOT_RENDERER_BVH)
 {
 	float4x4 xTraceBVHWorld;
+	float4 xTraceBVHInstanceColor;
 	uint xTraceBVHMaterialOffset;
 	uint xTraceBVHMeshTriangleOffset;
 	uint xTraceBVHMeshTriangleCount;
 	uint xTraceBVHMeshVertexPOSStride;
 };
 
-struct BVHMeshTriangle
-{
-	float3 v0, v1, v2;
-	float3 n0, n1, n2;
-	float2 t0, t1, t2;
-	uint materialIndex;
-};
-struct BVHAABB
-{
-	float3 min;
-	float3 max;
-};
 
-struct ClusterCone
+struct BVHPrimitive
 {
-	uint valid;
-	float3 position;
-	float3 direction;
-	float angleCos;
+	float x0;
+	float y0;
+	float z0;
+	float x1;
+
+	float y1;
+	float z1;
+	float x2;
+	float y2;
+
+	// This layout is good because if we only want to load normals, then the first 8 floats can be skipped
+	float z2;
+	uint n0;
+	uint n1;
+	uint n2;
+
+	float3 v0() { return float3(x0, y0, z0); }
+	float3 v1() { return float3(x1, y1, z1); }
+	float3 v2() { return float3(x2, y2, z2); }
+};
+struct BVHPrimitiveData
+{
+	uint2 u0;
+	uint2 u1;
+
+	uint2 u2;
+	uint c0;
+	uint c1;
+
+	uint c2;
+	uint tangent;
+	uint binormal;
+	uint materialIndex;
 };
 
 struct BVHNode
 {
-	uint ParentIndex;
+	float3 min;
 	uint LeftChildIndex;
+	float3 max;
 	uint RightChildIndex;
 };
 

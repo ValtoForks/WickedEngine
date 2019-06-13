@@ -15,7 +15,7 @@ RendererWindow::RendererWindow(wiGUI* gui, RenderPath3D* path) : GUI(gui)
 	wiRenderer::SetToDrawDebugCameras(true);
 
 	rendererWindow = new wiWindow(GUI, "Renderer Window");
-	rendererWindow->SetSize(XMFLOAT2(640, 780));
+	rendererWindow->SetSize(XMFLOAT2(640, 790));
 	rendererWindow->SetEnabled(true);
 	GUI->AddWidget(rendererWindow);
 
@@ -172,7 +172,7 @@ RendererWindow::RendererWindow(wiGUI* gui, RenderPath3D* path) : GUI(gui)
 	});
 	tessellationCheckBox->SetCheck(false);
 	rendererWindow->AddWidget(tessellationCheckBox);
-	tessellationCheckBox->SetEnabled(wiRenderer::GetDevice()->CheckCapability(wiGraphicsTypes::GraphicsDevice::GRAPHICSDEVICE_CAPABILITY_TESSELLATION));
+	tessellationCheckBox->SetEnabled(wiRenderer::GetDevice()->CheckCapability(wiGraphics::GraphicsDevice::GRAPHICSDEVICE_CAPABILITY_TESSELLATION));
 
 	advancedRefractionsCheckBox = new wiCheckBox("Advanced Refractions: ");
 	advancedRefractionsCheckBox->SetTooltip("Enable advanced refraction rendering: rough transparent materials will be more matte.");
@@ -226,7 +226,7 @@ RendererWindow::RendererWindow(wiGUI* gui, RenderPath3D* path) : GUI(gui)
 		switch (args.iValue)
 		{
 		case 0:
-			wiRenderer::SetShadowProps2D(64, 0, -1);
+			wiRenderer::SetShadowProps2D(0, -1, -1);
 			break;
 		case 1:
 			wiRenderer::SetShadowProps2D(128, -1, -1);
@@ -270,7 +270,7 @@ RendererWindow::RendererWindow(wiGUI* gui, RenderPath3D* path) : GUI(gui)
 		switch (args.iValue)
 		{
 		case 0:
-			wiRenderer::SetShadowPropsCube(128, 0);
+			wiRenderer::SetShadowPropsCube(0, -1);
 			break;
 		case 1:
 			wiRenderer::SetShadowPropsCube(128, -1);
@@ -358,21 +358,21 @@ RendererWindow::RendererWindow(wiGUI* gui, RenderPath3D* path) : GUI(gui)
 	textureQualityComboBox->AddItem("Trilinear");
 	textureQualityComboBox->AddItem("Anisotropic");
 	textureQualityComboBox->OnSelect([&](wiEventArgs args) {
-		wiGraphicsTypes::SamplerDesc desc = wiRenderer::GetSampler(SSLOT_OBJECTSHADER)->GetDesc();
+		wiGraphics::SamplerDesc desc = wiRenderer::GetSampler(SSLOT_OBJECTSHADER)->GetDesc();
 
 		switch (args.iValue)
 		{
 		case 0:
-			desc.Filter = wiGraphicsTypes::FILTER_MIN_MAG_MIP_POINT;
+			desc.Filter = wiGraphics::FILTER_MIN_MAG_MIP_POINT;
 			break;
 		case 1:
-			desc.Filter = wiGraphicsTypes::FILTER_MIN_MAG_LINEAR_MIP_POINT;
+			desc.Filter = wiGraphics::FILTER_MIN_MAG_LINEAR_MIP_POINT;
 			break;
 		case 2:
-			desc.Filter = wiGraphicsTypes::FILTER_MIN_MAG_MIP_LINEAR;
+			desc.Filter = wiGraphics::FILTER_MIN_MAG_MIP_LINEAR;
 			break;
 		case 3:
-			desc.Filter = wiGraphicsTypes::FILTER_ANISOTROPIC;
+			desc.Filter = wiGraphics::FILTER_ANISOTROPIC;
 			break;
 		default:
 			break;
@@ -391,21 +391,21 @@ RendererWindow::RendererWindow(wiGUI* gui, RenderPath3D* path) : GUI(gui)
 	mipLodBiasSlider->SetSize(XMFLOAT2(100, 30));
 	mipLodBiasSlider->SetPos(XMFLOAT2(x, y += 30));
 	mipLodBiasSlider->OnSlide([&](wiEventArgs args) {
-		wiGraphicsTypes::SamplerDesc desc = wiRenderer::GetSampler(SSLOT_OBJECTSHADER)->GetDesc();
+		wiGraphics::SamplerDesc desc = wiRenderer::GetSampler(SSLOT_OBJECTSHADER)->GetDesc();
 		desc.MipLODBias = args.fValue;
 		wiRenderer::ModifySampler(desc, SSLOT_OBJECTSHADER);
 	});
 	rendererWindow->AddWidget(mipLodBiasSlider);
 
-	lightmapBakeBounceCountSlider = new wiSlider(0, 10, 1, 10, "Lightmap Bounces: ");
-	lightmapBakeBounceCountSlider->SetTooltip("How many indirect light bounces to compute when baking lightmaps.");
-	lightmapBakeBounceCountSlider->SetSize(XMFLOAT2(100, 30));
-	lightmapBakeBounceCountSlider->SetPos(XMFLOAT2(x, y += 30));
-	lightmapBakeBounceCountSlider->SetValue((float)wiRenderer::GetLightmapBakeBounceCount());
-	lightmapBakeBounceCountSlider->OnSlide([&](wiEventArgs args) {
-		wiRenderer::SetLightmapBakeBounceCount((uint32_t)args.iValue);
+	raytraceBounceCountSlider = new wiSlider(0, 10, 1, 10, "Raytrace Bounces: ");
+	raytraceBounceCountSlider->SetTooltip("How many indirect light bounces to compute when doing ray tracing.");
+	raytraceBounceCountSlider->SetSize(XMFLOAT2(100, 30));
+	raytraceBounceCountSlider->SetPos(XMFLOAT2(x, y += 30));
+	raytraceBounceCountSlider->SetValue((float)wiRenderer::GetRaytraceBounceCount());
+	raytraceBounceCountSlider->OnSlide([&](wiEventArgs args) {
+		wiRenderer::SetRaytraceBounceCount((uint32_t)args.iValue);
 	});
-	rendererWindow->AddWidget(lightmapBakeBounceCountSlider);
+	rendererWindow->AddWidget(raytraceBounceCountSlider);
 
 
 
@@ -452,6 +452,15 @@ RendererWindow::RendererWindow(wiGUI* gui, RenderPath3D* path) : GUI(gui)
 	});
 	debugForceFieldsCheckBox->SetCheck(wiRenderer::GetToDrawDebugForceFields());
 	rendererWindow->AddWidget(debugForceFieldsCheckBox);
+
+	debugRaytraceBVHCheckBox = new wiCheckBox("Raytrace BVH visualizer: ");
+	debugRaytraceBVHCheckBox->SetTooltip("Visualize scene BVH if raytracing is enabled");
+	debugRaytraceBVHCheckBox->SetPos(XMFLOAT2(x, y += step));
+	debugRaytraceBVHCheckBox->OnClick([](wiEventArgs args) {
+		wiRenderer::SetRaytraceDebugBVHVisualizerEnabled(args.bValue);
+	});
+	debugRaytraceBVHCheckBox->SetCheck(wiRenderer::GetRaytraceDebugBVHVisualizerEnabled());
+	rendererWindow->AddWidget(debugRaytraceBVHCheckBox);
 
 	envProbesCheckBox = new wiCheckBox("Env probe visualizer: ");
 	envProbesCheckBox->SetTooltip("Toggle visualization of environment probes as reflective spheres");

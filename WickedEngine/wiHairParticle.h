@@ -3,7 +3,7 @@
 #include "wiGraphicsDevice.h"
 #include "wiECS.h"
 #include "wiSceneSystem_Decl.h"
-#include "wiIntersectables.h"
+#include "wiIntersect.h"
 
 class wiArchive;
 
@@ -13,17 +13,19 @@ namespace wiSceneSystem
 class wiHairParticle
 {
 private:
-	std::unique_ptr<wiGraphicsTypes::GPUBuffer> cb;
-	std::unique_ptr<wiGraphicsTypes::GPUBuffer> particleBuffer;
-	std::unique_ptr<wiGraphicsTypes::GPUBuffer> simulationBuffer;
+	std::unique_ptr<wiGraphics::GPUBuffer> cb;
+	std::unique_ptr<wiGraphics::GPUBuffer> particleBuffer;
+	std::unique_ptr<wiGraphics::GPUBuffer> simulationBuffer;
 public:
 
-	void UpdateRenderData(const MeshComponent& mesh, const MaterialComponent& material, GRAPHICSTHREAD threadID);
-	void Draw(const CameraComponent& camera, const MaterialComponent& material, SHADERTYPE shaderType, bool transparent, GRAPHICSTHREAD threadID) const;
+	void UpdateCPU(const TransformComponent& transform, const MeshComponent& mesh, float dt);
+	void UpdateGPU(const MeshComponent& mesh, const MaterialComponent& material, GRAPHICSTHREAD threadID) const;
+	void Draw(const CameraComponent& camera, const MaterialComponent& material, RENDERPASS renderPass, bool transparent, GRAPHICSTHREAD threadID) const;
 
 	enum FLAGS
 	{
 		EMPTY = 0,
+		REGENERATE_FRAME = 1 << 0,
 	};
 	uint32_t _flags = EMPTY;
 

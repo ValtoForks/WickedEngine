@@ -225,9 +225,6 @@
     <FxCompile Include="ssss.hlsl">
       <Filter>PS</Filter>
     </FxCompile>
-    <FxCompile Include="stereogramPS.hlsl">
-      <Filter>PS</Filter>
-    </FxCompile>
     <FxCompile Include="sunPS.hlsl">
       <Filter>PS</Filter>
     </FxCompile>
@@ -711,22 +708,10 @@
     <FxCompile Include="raytrace_clearCS.hlsl">
       <Filter>CS</Filter>
     </FxCompile>
-    <FxCompile Include="bvh_classificationCS.hlsl">
-      <Filter>CS</Filter>
-    </FxCompile>
-    <FxCompile Include="bvh_clusterprocessorCS.hlsl">
-      <Filter>CS</Filter>
-    </FxCompile>
     <FxCompile Include="bvh_hierarchyCS.hlsl">
       <Filter>CS</Filter>
     </FxCompile>
-    <FxCompile Include="bvh_kickjobsCS.hlsl">
-      <Filter>CS</Filter>
-    </FxCompile>
     <FxCompile Include="bvh_propagateaabbCS.hlsl">
-      <Filter>CS</Filter>
-    </FxCompile>
-    <FxCompile Include="bvh_resetCS.hlsl">
       <Filter>CS</Filter>
     </FxCompile>
     <FxCompile Include="raytrace_lightsamplingCS.hlsl">
@@ -860,6 +845,18 @@
     </FxCompile>
     <FxCompile Include="screenPS_bicubic.hlsl">
       <Filter>PS</Filter>
+    </FxCompile>
+    <FxCompile Include="raytrace_debugbvhPS.hlsl">
+      <Filter>PS</Filter>
+    </FxCompile>
+    <FxCompile Include="raytrace_screenVS.hlsl">
+      <Filter>VS</Filter>
+    </FxCompile>
+    <FxCompile Include="impostorPS_wire.hlsl">
+      <Filter>PS</Filter>
+    </FxCompile>
+    <FxCompile Include="bvh_primitivesCS.hlsl">
+      <Filter>CS</Filter>
     </FxCompile>
   </ItemGroup>
   <ItemGroup>

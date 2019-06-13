@@ -1,7 +1,7 @@
 #pragma once
 #include "CommonInclude.h"
 #include "wiGraphicsDevice.h"
-#include "wiIntersectables.h"
+#include "wiIntersect.h"
 #include "ShaderInterop_EmittedParticle.h"
 #include "wiEnums.h"
 #include "wiSceneSystem_Decl.h"
@@ -26,35 +26,36 @@ public:
 
 private:
 	ParticleCounters debugData = {};
-	std::unique_ptr<wiGraphicsTypes::GPUBuffer> debugDataReadbackBuffer;
-	std::unique_ptr<wiGraphicsTypes::GPUBuffer> debugDataReadbackIndexBuffer;
-	std::unique_ptr<wiGraphicsTypes::GPUBuffer> debugDataReadbackDistanceBuffer;
+	std::unique_ptr<wiGraphics::GPUBuffer> debugDataReadbackBuffer;
+	std::unique_ptr<wiGraphics::GPUBuffer> debugDataReadbackIndexBuffer;
+	std::unique_ptr<wiGraphics::GPUBuffer> debugDataReadbackDistanceBuffer;
 
-	std::unique_ptr<wiGraphicsTypes::GPUBuffer> particleBuffer;
-	std::unique_ptr<wiGraphicsTypes::GPUBuffer> aliveList[2];
-	std::unique_ptr<wiGraphicsTypes::GPUBuffer> deadList;
-	std::unique_ptr<wiGraphicsTypes::GPUBuffer> distanceBuffer; // for sorting
-	std::unique_ptr<wiGraphicsTypes::GPUBuffer> sphPartitionCellIndices; // for SPH
-	std::unique_ptr<wiGraphicsTypes::GPUBuffer> sphPartitionCellOffsets; // for SPH
-	std::unique_ptr<wiGraphicsTypes::GPUBuffer> densityBuffer; // for SPH
-	std::unique_ptr<wiGraphicsTypes::GPUBuffer> counterBuffer;
-	std::unique_ptr<wiGraphicsTypes::GPUBuffer> indirectBuffers; // kickoffUpdate, simulation, draw
-	std::unique_ptr<wiGraphicsTypes::GPUBuffer> constantBuffer;
+	std::unique_ptr<wiGraphics::GPUBuffer> particleBuffer;
+	std::unique_ptr<wiGraphics::GPUBuffer> aliveList[2];
+	std::unique_ptr<wiGraphics::GPUBuffer> deadList;
+	std::unique_ptr<wiGraphics::GPUBuffer> distanceBuffer; // for sorting
+	std::unique_ptr<wiGraphics::GPUBuffer> sphPartitionCellIndices; // for SPH
+	std::unique_ptr<wiGraphics::GPUBuffer> sphPartitionCellOffsets; // for SPH
+	std::unique_ptr<wiGraphics::GPUBuffer> densityBuffer; // for SPH
+	std::unique_ptr<wiGraphics::GPUBuffer> counterBuffer;
+	std::unique_ptr<wiGraphics::GPUBuffer> indirectBuffers; // kickoffUpdate, simulation, draw
+	std::unique_ptr<wiGraphics::GPUBuffer> constantBuffer;
 	void CreateSelfBuffers();
 
 	float emit = 0.0f;
+	int burst = 0;
 
 	bool buffersUpToDate = false;
 	uint32_t MAX_PARTICLES = 1000;
 
 public:
-	void Update(float dt);
-	void Burst(float num);
+	void UpdateCPU(const TransformComponent& transform, float dt);
+	void Burst(int num);
 	void Restart();
 
 	// Must have a transform and material component, but mesh is optional
-	void UpdateRenderData(const TransformComponent& transform, const MaterialComponent& material, const MeshComponent* mesh, GRAPHICSTHREAD threadID);
-	void Draw(const CameraComponent& camera, const MaterialComponent& material, GRAPHICSTHREAD threadID);
+	void UpdateGPU(const TransformComponent& transform, const MaterialComponent& material, const MeshComponent* mesh, GRAPHICSTHREAD threadID) const;
+	void Draw(const CameraComponent& camera, const MaterialComponent& material, GRAPHICSTHREAD threadID) const;
 
 	ParticleCounters GetDebugData() { return debugData; }
 
